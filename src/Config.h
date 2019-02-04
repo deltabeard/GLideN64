@@ -238,7 +238,7 @@ struct Config
 
 extern Config config;
 
-void Config_LoadConfig();
+extern "C" void Config_LoadConfig();
 #ifndef MUPENPLUSAPI
 void Config_DoConfig(/*HWND hParent*/);
 #endif
