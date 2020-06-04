@@ -14,7 +14,6 @@
 #include "NoiseTexture.h"
 #include "ZlutTexture.h"
 #include "PaletteTexture.h"
-#include "TextDrawer.h"
 #include "FrameBuffer.h"
 #include "DepthBuffer.h"
 #include "FrameBufferInfo.h"
@@ -1412,15 +1411,9 @@ void GraphicsDrawer::correctTexturedRectParams(TexturedRectParams & _params)
 	m_texrectParams = _params;
 }
 
-void GraphicsDrawer::drawText(const char *_pText, float x, float y)
-{
-	m_drawingState = DrawingState::Non;
-	g_textDrawer.drawText(_pText, x, y);
-}
-
 void GraphicsDrawer::_drawOSD(const char *_pText, float _x, float & _y)
 {
-    
+
 }
 
 void GraphicsDrawer::drawOSD()
@@ -1675,7 +1668,6 @@ void GraphicsDrawer::_initData()
 	_setSpecialTexrect();
 
 	textureCache().init();
-	g_textDrawer.init();
 	DepthBuffer_Init();
 	FrameBuffer_Init();
 	Combiner_Init();
@@ -1713,6 +1705,5 @@ void GraphicsDrawer::_destroyData()
 	Combiner_Destroy();
 	FrameBuffer_Destroy();
 	DepthBuffer_Destroy();
-	g_textDrawer.destroy();
 	textureCache().destroy();
 }

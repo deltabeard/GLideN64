@@ -81,6 +81,7 @@ void TextureFilterHandler::init()
 	wchar_t wRomName[32];
 	::mbstowcs(wRomName, RSP.romname, 32);
 
+#ifndef NODHQ
 	wchar_t txPath[PLUGIN_PATH_SIZE + 16];
 	wchar_t * pTexPackPath = config.textureFilter.txPath;
 	if (::wcslen(config.textureFilter.txPath) == 0 ||
@@ -118,21 +119,25 @@ void TextureFilterHandler::init()
 		pTexPackPath, // path to texture packs folder
 		wRomName, // name of ROM. must be no longer than 256 characters
 		displayLoadProgress);
-
+#endif
 }
 
 void TextureFilterHandler::shutdown()
 {
+#ifndef NODHQ
 	if (isInited()) {
 		txfilter_shutdown();
 		m_inited = m_options = 0;
 	}
+#endif
 }
 
 void TextureFilterHandler::dumpcache()
 {
+#ifndef NODHQ
 	if (isInited())
 		txfilter_dumpcache();
+#endif
 }
 
 TextureFilterHandler TFH;
