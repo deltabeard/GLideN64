@@ -50,7 +50,6 @@ struct Config
 		u32 enableNoise;
 		u32 enableLOD;
 		u32 enableHWLighting;
-		u32 enableCustomSettings;
 		u32 enableShadersStorage;
 		u32 enableLegacyBlending;
 		u32 enableHybridFilter;
@@ -194,15 +193,6 @@ struct Config
 		posBottomRight = 32,
 		posBottom = posBottomLeft | posBottomCenter | posBottomRight
 	};
-
-	struct {
-		u32 vis;
-		u32 fps;
-		u32 percent;
-		u32 internalResolution;
-		u32 renderingResolution;
-		u32 pos;
-	} onScreenDisplay;
 
 	struct {
 		u32 dumpMode;

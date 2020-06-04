@@ -10,10 +10,7 @@
 #include "DepthBuffer.h"
 #include "FrameBufferInfo.h"
 #include "Config.h"
-#include "Performance.h"
 #include "Debugger.h"
-#include "DebugDump.h"
-#include "Keys.h"
 #include "DisplayWindow.h"
 #include <Graphics/Context.h>
 
@@ -103,12 +100,9 @@ void VI_UpdateScreen()
 	if (VI.lastOrigin == -1) // Workaround for Mupen64Plus issue with initialization
 		gfxContext.isError();
 
-	DebugMsg(DEBUG_DETAIL, "VI_UpdateScreen Origin: %08x, Old origin: %08x, width: %d\n", *REG.VI_ORIGIN, VI.lastOrigin, *REG.VI_WIDTH);
-
 	if (ConfigOpen)
 		return;
 
-	perf.increaseVICount();
 	DisplayWindow & wnd = dwnd();
 	if (wnd.changeWindow())
 		return;
@@ -117,16 +111,11 @@ void VI_UpdateScreen()
 	wnd.saveScreenshot();
 	g_debugger.checkDebugState();
 
-	if (isKeyPressed(G64_VK_G, 0x0001)) {
-		SwitchDump(config.debug.dumpMode);
-	}
-
 	bool bVIUpdated = false;
 	if (*REG.VI_ORIGIN != VI.lastOrigin) {
 		VI_UpdateSize();
 		bVIUpdated = true;
 		wnd.updateScale();
-		perf.increaseFramesCount();
 	}
 
 	if (config.frameBufferEmulation.enable) {
@@ -180,7 +169,7 @@ void VI_UpdateScreen()
 			frameBufferList().renderBuffer();
 			frameBufferList().clearBuffersChanged();
 			VI.lastOrigin = *REG.VI_ORIGIN;
-		} 
+		}
 	} else {
 		if (gDP.changed & CHANGED_COLORBUFFER) {
 			frameBufferList().renderBuffer();

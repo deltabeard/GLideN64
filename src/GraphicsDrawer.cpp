@@ -8,7 +8,6 @@
 #include "DisplayWindow.h"
 #include "SoftwareRender.h"
 #include "GraphicsDrawer.h"
-#include "Performance.h"
 #include "TextureFilterHandler.h"
 #include "PostProcessor.h"
 #include "NoiseTexture.h"
@@ -1676,7 +1675,6 @@ void GraphicsDrawer::_initData()
 	g_zlutTexture.init();
 	g_noiseTexture.init();
 	g_paletteTexture.init();
-	perf.reset();
 	FBInfo::fbInfo.reset();
 	m_texrectDrawer.init();
 	m_drawingState = DrawingState::Non;

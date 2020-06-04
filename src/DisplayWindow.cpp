@@ -68,14 +68,6 @@ void DisplayWindow::saveBufferContent(FrameBuffer * _pBuffer)
 
 void DisplayWindow::saveBufferContent(graphics::ObjectHandle _fbo, CachedTexture *_pTexture)
 {
-	if (wcslen(m_strScreenDirectory) == 0) {
-		api().FindPluginPath(m_strScreenDirectory);
-		std::wstring pluginPath(m_strScreenDirectory);
-		if (pluginPath.back() != L'/')
-			pluginPath += L'/';
-		::wcsncpy(m_strScreenDirectory, pluginPath.c_str(), pluginPath.length() + 1);
-	}
-	_saveBufferContent(_fbo, _pTexture);
 }
 
 bool DisplayWindow::changeWindow()

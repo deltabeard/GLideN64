@@ -1,16 +1,14 @@
 #include <algorithm>
 #include "assert.h"
+#include "Combiner.h"
+#include "Config.h"
+#include "Debugger.h"
+#include "DisplayWindow.h"
+#include "FrameBuffer.h"
+#include "GLideN64.h"
 #include "math.h"
 #include "Platform.h"
-#include "GLideN64.h"
 #include "RSP.h"
-#include "Keys.h"
-#include "Config.h"
-#include "Combiner.h"
-#include "FrameBuffer.h"
-#include "DisplayWindow.h"
-#include "DebugDump.h"
-#include "Debugger.h"
 
 Debugger g_debugger;
 

@@ -1,6 +1,5 @@
 #include <algorithm>
 #include <cstring>
-#include "DebugDump.h"
 #include "RSP.h"
 #include "RDP.h"
 #include "N64.h"
@@ -31,24 +30,12 @@ void _ProcessDList()
 {
 	while (!RSP.halt) {
 		if ((RSP.PC[RSP.PCi] + 8) > RDRAMSize) {
-#ifdef DEBUG_DUMP
-			if ((config.debug.dumpMode & DEBUG_DETAIL) != 0)
-				DebugMsg(DEBUG_DETAIL | DEBUG_ERROR, "// Attempting to execute RSP command at invalid RDRAM location\n");
-			else if ((config.debug.dumpMode & DEBUG_NORMAL) != 0)
-				DebugMsg(DEBUG_NORMAL | DEBUG_ERROR, "Attempting to execute RSP command at invalid RDRAM location\n");
-			else if ((config.debug.dumpMode & DEBUG_LOW) != 0)
-				DebugMsg(DEBUG_LOW | DEBUG_ERROR, "ATTEMPTING TO EXECUTE RSP COMMAND AT INVALID RDRAM LOCATION\n");
-#endif
 			break;
 		}
 
 		RSP.w0 = *(u32*)&RDRAM[RSP.PC[RSP.PCi]];
 		RSP.w1 = *(u32*)&RDRAM[RSP.PC[RSP.PCi] + 4];
 		RSP.cmd = _SHIFTR(RSP.w0, 24, 8);
-
-#ifdef DEBUG_DUMP
-		DebugMsg(DEBUG_LOW, "0x%08lX: CMD=0x%02lX W0=0x%08lX W1=0x%08lX\n", RSP.PC[RSP.PCi], _SHIFTR(RSP.w0, 24, 8), RSP.w0, RSP.w1);
-#endif
 
 		RSP.PC[RSP.PCi] += 8;
 		u32 pci = RSP.PCi;
@@ -83,10 +70,6 @@ void _ProcessDListFactor5()
 		RSP.w1 = *(u32*)&RDRAM[RSP.PC[RSP.PCi] + 4];
 		RSP.cmd = _SHIFTR(RSP.w0, 24, 8);
 
-#ifdef DEBUG_DUMP
-		DebugMsg(DEBUG_LOW, "0x%08lX: CMD=0x%02lX W0=0x%08lX W1=0x%08lX\n", RSP.PC[RSP.PCi], _SHIFTR(RSP.w0, 24, 8), RSP.w0, RSP.w1);
-#endif
-
 		RSP.nextCmd = _SHIFTR(*(u32*)&RDRAM[RSP.PC[RSP.PCi] + 8], 24, 8);
 
 		GBI.cmd[RSP.cmd](RSP.w0, RSP.w1);
@@ -102,7 +85,6 @@ void RSP_CheckDLCounter()
 		if (RSP.count == 0) {
 			RSP.count = -1;
 			--RSP.PCi;
-			DebugMsg(DEBUG_NORMAL, "End of DL\n");
 		}
 	}
 }
@@ -146,8 +128,6 @@ void RSP_ProcessDList()
 		// Get the start of the display list and the length of it
 		const u32 dlist_start = *(u32*)(DMEM + 0xFF0);
 		const u32 dlist_length = *(u32*)(DMEM + 0xFF4);
-		DebugMsg(DEBUG_NORMAL, "--- NEW DLIST --- ucode: %d, fbuf: %08lx, fbuf_width: %d, dlist start: %08lx, dlist_length: %d, x_scale: %f, y_scale: %f\n",
-			GBI.getMicrocodeType(), *REG.VI_ORIGIN, *REG.VI_WIDTH, dlist_start, dlist_length, (*REG.VI_X_SCALE & 0xFFF) / 1024.0f, (*REG.VI_Y_SCALE & 0xFFF) / 1024.0f);
 
 		u32 uc_start = *(u32*)&DMEM[0x0FD0];
 		u32 uc_dstart = *(u32*)&DMEM[0x0FD8];
@@ -346,8 +326,6 @@ void RSP_Init()
 		config.generalEmulation.hacks |= hack_TonyHawk;
 	else if (strstr(RSP.romname, (const char *)"NITRO64") != nullptr)
 		config.generalEmulation.hacks |= hack_WCWNitro;
-
-	api().FindPluginPath(RSP.pluginpath);
 
 	RSP_SetDefaultState();
 }

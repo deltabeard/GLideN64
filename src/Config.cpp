@@ -35,7 +35,6 @@ void Config::resetToDefaults()
 	generalEmulation.enableLOD = 1;
 	generalEmulation.enableNoise = 1;
 	generalEmulation.enableHWLighting = 0;
-	generalEmulation.enableCustomSettings = 1;
 	generalEmulation.enableShadersStorage = 1;
 	generalEmulation.enableLegacyBlending = 0;
 	generalEmulation.enableHybridFilter = 1;
@@ -92,20 +91,13 @@ void Config::resetToDefaults()
 	textureFilter.txEnhancedTextureFileStorage = 0;
 	textureFilter.txHiresTextureFileStorage = 0;
 
-	api().GetUserDataPath(textureFilter.txPath);
-	gln_wcscat(textureFilter.txPath, wst("/hires_texture"));
-	api().GetUserCachePath(textureFilter.txCachePath);
-	gln_wcscat(textureFilter.txCachePath, wst("/cache"));
-	api().GetUserCachePath(textureFilter.txDumpPath);
-	gln_wcscat(textureFilter.txDumpPath, wst("/texture_dump"));
+	/* FIXME: Chang to buffer. */
+	gln_wcscat(textureFilter.txPath, wst("hires_texture"));
+	gln_wcscat(textureFilter.txCachePath, wst("cache"));
+	gln_wcscat(textureFilter.txDumpPath, wst("texture_dump"));
 
 	gammaCorrection.force = 0;
 	gammaCorrection.level = 2.0f;
-
-	onScreenDisplay.vis = 0;
-	onScreenDisplay.fps = 0;
-	onScreenDisplay.percent = 0;
-	onScreenDisplay.pos = posBottomLeft;
 
 	debug.dumpMode = 0;
 }
