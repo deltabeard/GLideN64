@@ -4,6 +4,7 @@
 #include "readerwriterqueue.h"
 #include "opengl_WrappedFunctions.h"
 #include "opengl_Command.h"
+#include "Types.h"
 #include <thread>
 #include <map>
 

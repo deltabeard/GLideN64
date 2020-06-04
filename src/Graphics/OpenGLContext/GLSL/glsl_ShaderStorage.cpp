@@ -12,7 +12,6 @@
 #include <RSP.h>
 #include <PluginAPI.h>
 #include <Combiner.h>
-#include <DisplayLoadProgress.h>
 #include "glsl_Utils.h"
 #include "glsl_ShaderStorage.h"
 #include "glsl_CombinerProgramImpl.h"

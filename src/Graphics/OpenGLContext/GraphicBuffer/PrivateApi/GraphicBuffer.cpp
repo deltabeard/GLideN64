@@ -31,8 +31,8 @@ static void initAllocDev()
 GraphicBuffer::GraphicBuffer()
 {
 	initAllocDev();
-	common.incRef = [](struct android_native_base_t *){ LOG(LOG_MINIMAL,"called incRef"); };
-	common.decRef = [](struct android_native_base_t *){ LOG(LOG_MINIMAL,"called decRef"); };
+	common.incRef = [](struct android_native_base_t *){ LOG( LOG_INFO,"called incRef"); };
+	common.decRef = [](struct android_native_base_t *){ LOG( LOG_INFO,"called decRef"); };
 }
 
 GraphicBuffer::~GraphicBuffer()

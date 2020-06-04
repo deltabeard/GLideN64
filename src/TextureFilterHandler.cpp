@@ -9,7 +9,6 @@
 #include "FrameBuffer.h"
 #include "TextureFilterHandler.h"
 #include "DisplayWindow.h"
-#include "DisplayLoadProgress.h"
 #include "wst.h"
 
 static

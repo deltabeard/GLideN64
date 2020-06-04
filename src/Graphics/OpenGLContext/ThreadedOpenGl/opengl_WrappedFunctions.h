@@ -19,6 +19,7 @@
 #include "opengl_Command.h"
 #include "RingBufferPool.h"
 #include <string.h> // memcpy
+#include "Types.h"
 
 #ifdef MUPENPLUSAPI
 #include <mupenplus/GLideN64_mupenplus.h>
