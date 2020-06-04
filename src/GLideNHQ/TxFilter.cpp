@@ -30,7 +30,6 @@
 #include <stdlib.h>
 #include <assert.h>
 
-#include <osal_files.h>
 #include "TxFilter.h"
 #include "TextureFilters.h"
 #include "TxDbg.h"
@@ -74,7 +73,7 @@ TxFilter::TxFilter(int maxwidth,
 	, _txHiResCache(nullptr)
 	, _txImage(nullptr)
 {
-	/* HACKALERT: the emulator misbehaves and sometimes forgets to shutdown */
+	/* FIXME: HACKALERT: the emulator misbehaves and sometimes forgets to shutdown */
 	if ((ident && wcscmp(ident, wst("DEFAULT")) != 0 && _ident.compare(ident) == 0) &&
 			_maxwidth  == maxwidth  &&
 			_maxheight == maxheight &&
@@ -85,6 +84,7 @@ TxFilter::TxFilter(int maxwidth,
 	if (texCachePath == nullptr || texDumpPath == nullptr || texPackPath == nullptr)
 		return;
 
+#if 0
 	/* shamelessness :P this first call to the debug output message creates
    * a file in the executable directory. */
 	INFO(0, wst("------------------------------------------------------------------\n"));
@@ -99,6 +99,7 @@ TxFilter::TxFilter(int maxwidth,
 	INFO(0, wst("\n"));
 	INFO(0, wst(" GLideN64 GitHub : https://github.com/gonetz/GLideN64\n"));
 	INFO(0, wst("------------------------------------------------------------------\n"));
+#endif
 
 	_options = options;
 
@@ -574,59 +575,6 @@ TxFilter::checksum64(uint8 *src, int width, int height, int size, int rowStride,
 boolean
 TxFilter::dmptx(uint8 *src, int width, int height, int rowStridePixel, ColorFormat gfmt, uint16 n64fmt, uint64 r_crc64)
 {
-	assert(gfmt != graphics::colorFormat::RGBA);
-	if (!_initialized)
-		return 0;
-
-	if (!(_options & DUMP_TEX))
-		return 0;
-
-	DBG_INFO(80, wst("gfmt = %02x n64fmt = %02x\n"), u32(gfmt), n64fmt);
-	DBG_INFO(80, wst("hirestex: r_crc64:%08X %08X\n"),
-			 (uint32)(r_crc64 >> 32), (uint32)(r_crc64 & 0xffffffff));
-
-	if (gfmt != graphics::internalcolorFormat::RGBA8) {
-		if (!_txQuantize->quantize(src, _tex1, rowStridePixel, height, gfmt, graphics::internalcolorFormat::RGBA8))
-			return 0;
-		src = _tex1;
-	}
-
-	if (!_dumpPath.empty() && !_ident.empty()) {
-		/* dump it to disk */
-		FILE *fp = nullptr;
-		tx_wstring tmpbuf;
-
-		/* create directories */
-		tmpbuf.assign(_dumpPath);
-		tmpbuf.append(wst("/"));
-		tmpbuf.append(_ident);
-		tmpbuf.append(wst("/GLideNHQ"));
-		if (!osal_path_existsW(tmpbuf.c_str()) && osal_mkdirp(tmpbuf.c_str()) != 0)
-			return 0;
-
-		if ((n64fmt >> 8) == 0x2) {
-			wchar_t wbuf[256];
-			tx_swprintf(wbuf, 256, wst("/%ls#%08X#%01X#%01X#%08X_ciByRGBA.png"), _ident.c_str(), (uint32)(r_crc64 & 0xffffffff), (n64fmt >> 8), (n64fmt & 0xf), (uint32)(r_crc64 >> 32));
-			tmpbuf.append(wbuf);
-		} else {
-			wchar_t wbuf[256];
-			tx_swprintf(wbuf, 256, wst("/%ls#%08X#%01X#%01X_all.png"), _ident.c_str(), (uint32)(r_crc64 & 0xffffffff), (n64fmt >> 8), (n64fmt & 0xf));
-			tmpbuf.append(wbuf);
-		}
-
-#ifdef OS_WINDOWS
-		if ((fp = _wfopen(tmpbuf.c_str(), wst("wb"))) != nullptr) {
-#else
-		char cbuf[MAX_PATH];
-		wcstombs(cbuf, tmpbuf.c_str(), MAX_PATH);
-		if ((fp = fopen(cbuf, "wb")) != nullptr) {
-#endif
-			_txImage->writePNG(src, fp, width, height, (rowStridePixel << 2), graphics::internalcolorFormat::RGBA8);
-			fclose(fp);
-			return 1;
-		}
-	}
-
 	return 0;
 }
 

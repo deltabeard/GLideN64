@@ -3,7 +3,6 @@
 #include <errno.h>
 #include <stdlib.h>
 #include <string.h>
-#include <osal_files.h>
 #include <algorithm>
 
 #include "../Textures.h"
@@ -183,13 +182,6 @@ bool Config_SetDefault()
 	assert(res == M64ERR_SUCCESS);
 	wcstombs(txPath, config.textureFilter.txDumpPath, PLUGIN_PATH_SIZE * 2);
 	res = ConfigSetDefaultString(g_configVideoGliden64, "txDumpPath", txPath, "Path to folder where plugin saves dumped textures.");
-	assert(res == M64ERR_SUCCESS);
-
-	res = ConfigSetDefaultString(g_configVideoGliden64, "fontName", config.font.name.c_str(), "File name of True Type Font for text messages.");
-	assert(res == M64ERR_SUCCESS);
-	res = ConfigSetDefaultInt(g_configVideoGliden64, "fontSize", config.font.size, "Font size.");
-	assert(res == M64ERR_SUCCESS);
-	res = ConfigSetDefaultString(g_configVideoGliden64, "fontColor", "B5E61D", "Font color in RGB format.");
 	assert(res == M64ERR_SUCCESS);
 
 	//#Gamma correction settings
@@ -453,27 +445,6 @@ void Config_LoadConfig()
 	::mbstowcs(config.textureFilter.txPath, ConfigGetParamString(g_configVideoGliden64, "txPath"), PLUGIN_PATH_SIZE);
 	::mbstowcs(config.textureFilter.txCachePath, ConfigGetParamString(g_configVideoGliden64, "txCachePath"), PLUGIN_PATH_SIZE);
 	::mbstowcs(config.textureFilter.txDumpPath, ConfigGetParamString(g_configVideoGliden64, "txDumpPath"), PLUGIN_PATH_SIZE);
-
-	//#Font settings
-	config.font.name = ConfigGetParamString(g_configVideoGliden64, "fontName");
-	if (config.font.name.empty())
-		config.font.name = "arial.ttf";
-	char buf[16];
-	sprintf(buf, "0x%s", ConfigGetParamString(g_configVideoGliden64, "fontColor"));
-	long int uColor = strtol(buf, nullptr, 16);
-	if (uColor != 0) {
-		config.font.color[0] = _SHIFTR(uColor, 16, 8);
-		config.font.color[1] = _SHIFTR(uColor, 8, 8);
-		config.font.color[2] = _SHIFTR(uColor, 0, 8);
-		config.font.color[3] = 0xFF;
-		config.font.colorf[0] = _FIXED2FLOAT(config.font.color[0], 8);
-		config.font.colorf[1] = _FIXED2FLOAT(config.font.color[1], 8);
-		config.font.colorf[2] = _FIXED2FLOAT(config.font.color[2], 8);
-		config.font.colorf[3] = 1.0f;
-	}
-	config.font.size = ConfigGetParamInt(g_configVideoGliden64, "fontSize");
-	if (config.font.size == 0)
-		config.font.size = 30;
 
 	//#Gamma correction settings
 	config.gammaCorrection.force = ConfigGetParamBool(g_configVideoGliden64, "ForceGammaCorrection");

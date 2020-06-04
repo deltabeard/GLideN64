@@ -32,8 +32,6 @@
 #include <stdlib.h>
 #include <assert.h>
 
-#include <osal_files.h>
-
 #include "TxCache.h"
 #include "TxDbg.h"
 
@@ -278,84 +276,7 @@ bool TxMemoryCache::get(Checksum checksum, GHQTexInfo *info)
 
 bool TxMemoryCache::save(const wchar_t *path, const wchar_t *filename, int config)
 {
-	if (_cache.empty())
-		return false;
-
-	/* dump cache to disk */
-	char cbuf[MAX_PATH];
-
-	osal_mkdirp(path);
-
-#ifdef OS_WINDOWS
-	wchar_t curpath[MAX_PATH];
-	GETCWD(MAX_PATH, curpath);
-	CHDIR(path);
-#else
-	char curpath[MAX_PATH];
-	GETCWD(MAX_PATH, curpath);
-	wcstombs(cbuf, path, MAX_PATH);
-	CHDIR(cbuf);
-#endif
-
-	wcstombs(cbuf, filename, MAX_PATH);
-
-	gzFile gzfp = gzopen(cbuf, "wb1");
-	DBG_INFO(80, wst("gzfp:%x file:%ls\n"), gzfp, filename);
-	if (gzfp) {
-		/* write header to determine config match */
-		gzwrite(gzfp, &config, 4);
-
-		auto itMap = _cache.begin();
-		int total = 0;
-		while (itMap != _cache.end()) {
-			uint8 *dest = (*itMap).second->info.data;
-			uint32 destLen = (*itMap).second->size;
-			uint32 format = (*itMap).second->info.format;
-
-			/* to keep things simple, we save the texture data in a zlib uncompressed state. */
-			/* sigh... for those who cannot wait the extra few seconds. changed to keep
-			* texture data in a zlib compressed state. if the GZ_TEXCACHE or GZ_HIRESTEXCACHE
-			* option is toggled, the cache will need to be rebuilt.
-			*/
-			/*if (format & GL_TEXFMT_GZ) {
-			dest = _gzdest0;
-			destLen = _gzdestLen;
-			if (dest && destLen) {
-			if (uncompress(dest, &destLen, (*itMap).second->info.data, (*itMap).second->size) != Z_OK) {
-			dest = nullptr;
-			destLen = 0;
-			}
-			format &= ~GL_TEXFMT_GZ;
-			}
-			}*/
-
-			if (dest && destLen) {
-				/* texture checksum */
-				gzwrite(gzfp, &((*itMap).first), 8);
-
-				/* other texture info */
-				gzwrite(gzfp, &((*itMap).second->info.width), 4);
-				gzwrite(gzfp, &((*itMap).second->info.height), 4);
-				gzwrite(gzfp, &format, 4);
-				gzwrite(gzfp, &((*itMap).second->info.texture_format), 2);
-				gzwrite(gzfp, &((*itMap).second->info.pixel_type), 2);
-				gzwrite(gzfp, &((*itMap).second->info.is_hires_tex), 1);
-
-				gzwrite(gzfp, &destLen, 4);
-				gzwrite(gzfp, dest, destLen);
-			}
-
-			itMap++;
-
-			if (_callback)
-				(*_callback)(wst("Total textures saved to HDD: %d\n"), ++total);
-		}
-		gzclose(gzfp);
-	}
-
-	CHDIR(curpath);
-
-	return !_cache.empty();
+	return false;
 }
 
 bool TxMemoryCache::load(const wchar_t *path, const wchar_t *filename, int config, bool force)
@@ -502,7 +423,6 @@ public:
 
 private:
 	bool open(bool forRead);
-	bool writeData(uint32 destLen, const GHQTexInfo & info);
 	bool readData(GHQTexInfo & info);
 	void buildFullPath();
 
@@ -567,6 +487,8 @@ void TxFileStorage::buildFullPath()
 
 bool TxFileStorage::open(bool forRead)
 {
+	/* FIXME: Replace. */
+#if 0
 	if (_infile.is_open())
 		_infile.close();
 	if (_outfile.is_open())
@@ -599,42 +521,12 @@ bool TxFileStorage::open(bool forRead)
 	FWRITE(_storagePos);
 
 	return _outfile.good();
+#endif
 }
 
 void TxFileStorage::clear()
 {
-	if (empty() && osal_path_existsA(_fullPath.c_str()) == 0)
-		return;
-
-	_storage.clear();
-	_storagePos = 0UL;
-	_dirty = false;
-
-	if (_infile.is_open())
-		_infile.close();
-	if (_outfile.is_open())
-		_outfile.close();
-
-	_outfile.open(_fullPath, std::ofstream::out | std::ofstream::binary | std::ofstream::trunc);
-	FWRITE(_fakeConfig);
-	_storagePos = _initialPos;
-	FWRITE(_storagePos);
-	_outfile.close();
-}
-
-bool TxFileStorage::writeData(uint32 dataSize, const GHQTexInfo & info)
-{
-	if (info.data == nullptr || dataSize == 0)
-		return false;
-	FWRITE(info.width);
-	FWRITE(info.height);
-	FWRITE(info.format);
-	FWRITE(info.texture_format);
-	FWRITE(info.pixel_type);
-	FWRITE(info.is_hires_tex);
-	FWRITE(dataSize);
-	_outfile.write((char*)info.data, dataSize);
-	return _outfile.good();
+	return;
 }
 
 bool TxFileStorage::readData(GHQTexInfo & info)
@@ -675,71 +567,9 @@ bool TxFileStorage::readData(GHQTexInfo & info)
 	return true;
 }
 
+// TODO: Remove
 bool TxFileStorage::add(Checksum checksum, GHQTexInfo *info, int dataSize)
 {
-	/* NOTE: dataSize must be provided if info->data is zlib compressed. */
-
-	if (!checksum || !info->data || _storage.find(checksum) != _storage.end())
-		return false;
-
-	if (_infile.is_open() || !_outfile.is_open())
-		if (!open(false))
-			return false;
-
-	if (!_dirty) {
-		// Make position of storage data invalid.
-		// It will prevent attempts to load unsaved storage file.
-		_outfile.seekp(sizeof(_options), std::ofstream::beg);
-		int64 pos = -1;
-		FWRITE(pos);
-	}
-
-	uint8 *dest = info->data;
-	uint32 format = info->format;
-
-	if (dataSize == 0) {
-		dataSize = TxUtil::sizeofTx(info->width, info->height, info->format);
-
-		if (!dataSize)
-			return false;
-
-		if (_options & (GZ_TEXCACHE | GZ_HIRESTEXCACHE)) {
-			/* zlib compress it. compression level:1 (best speed) */
-			uLongf destLen = _gzdestLen;
-			dest = (dest == _gzdest0) ? _gzdest1 : _gzdest0;
-			if (compress2(dest, &destLen, info->data, dataSize, 1) != Z_OK) {
-				dest = info->data;
-				DBG_INFO(80, wst("Error: zlib compression failed!\n"));
-			} else {
-				DBG_INFO(80, wst("zlib compressed: %.02fkb->%.02fkb\n"), dataSize / 1024.0, destLen / 1024.0);
-				dataSize = destLen;
-				format |= GL_TEXFMT_GZ;
-			}
-		}
-	}
-
-	GHQTexInfo infoToWrite = *info;
-	infoToWrite.data = dest;
-	infoToWrite.format = format;
-
-	_outfile.seekp(_storagePos, std::ofstream::beg);
-	assert(_storagePos == _outfile.tellp());
-
-	_storage.insert(StorageMap::value_type(checksum._checksum, _storagePos));
-	if (!writeData(dataSize, infoToWrite))
-		return false;
-	_storagePos = _outfile.tellp();
-	_dirty = true;
-
-#ifdef DEBUG
-	DBG_INFO(80, wst("[%5d] added!! crc:%08X %08X %d x %d gfmt:%x total:%.02fmb\n"),
-		_storage.size(), checksum._hi, checksum._low,
-		info->width, info->height, info->format & 0xffff, (double)(_totalSize / 1024) / 1024.0);
-#endif
-
-	/* total storage size */
-	_totalSize += dataSize;
-
 	return true;
 }
 
@@ -763,40 +593,6 @@ bool TxFileStorage::get(Checksum checksum, GHQTexInfo *info)
 
 bool TxFileStorage::save(const wchar_t *path, const wchar_t *filename, int config)
 {
-	assert(_cachePath == path);
-	if (_filename.empty()) {
-		_filename = filename;
-		buildFullPath();
-	} else
-		assert(_filename == filename);
-
-	if (!_dirty)
-		return true;
-
-	if (_storage.empty() || _storagePos == 0UL)
-		return false;
-
-	if (_infile.is_open() || !_outfile.is_open())
-		if (!open(false))
-			return false;
-
-	_outfile.seekp(0L, std::ofstream::beg);
-
-	FWRITE(config);
-	FWRITE(_storagePos);
-	_outfile.seekp(_storagePos, std::ofstream::beg);
-	int storageSize = static_cast<int>(_storage.size());
-	FWRITE(storageSize);
-	if (_callback)
-		(*_callback)(wst("Saving texture storage...\n"));
-	for (auto& item : _storage) {
-		FWRITE(item.first);
-		FWRITE(item.second);
-	}
-	_outfile.close();
-	if (_callback)
-		(*_callback)(wst("Done\n"));
-
 	return true;
 }
 

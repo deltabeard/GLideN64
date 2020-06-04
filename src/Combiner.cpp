@@ -2,7 +2,6 @@
 #include <functional>
 #include <cstring>
 #include <stdio.h>
-#include <osal_files.h>
 
 #include "Combiner.h"
 #include "DebugDump.h"
