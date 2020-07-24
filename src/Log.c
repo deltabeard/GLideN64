@@ -11,6 +11,7 @@ void LogDebug(const char* f, int lin, int lvl, const char* fmt, ...)
 {
 	char buf[256];
 	int ret;
+	const char *const lvl_str[] = { "DEBUG", "VERB", "INFO", "WARN", "ERROR" };
 
 #ifdef NDEBUG
 	if(lvl < LOG_WARNING)
@@ -29,8 +30,7 @@ void LogDebug(const char* f, int lin, int lvl, const char* fmt, ...)
 	DebugMessage(lvl, "GLideN64 [%s:%d]: %s", f, lin, buf);
 #else
 	lvl++;
-	const char *const lvl_str[] = { "DEBUG", "VERB", "INFO", "WARN", "ERROR" };
-	fprintf(stderr, "%s: GLideN64 [%s:%d]: %s", lvl_str(lvl), f, lin, buf);
+	fprintf(stderr, "%s: GLideN64 [%s:%d]: %s", lvl_str[lvl], f, lin, buf);
 #endif
 	return;
 }
