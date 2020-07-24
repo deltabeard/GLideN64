@@ -4,7 +4,7 @@
 #include "Log.h"
 
 #ifdef MUPENPLUSAPI
-void DebugMessage(int level, const char *message, ...);
+extern void DebugMessage(int level, const char *message, ...);
 #endif
 
 void LogDebug(const char* f, int lin, int lvl, const char* fmt, ...)

@@ -1,17 +1,6 @@
-#ifndef PLATFORM_H
-#define PLATFORM_H
-
-#ifdef OS_WINDOWS
-#ifndef NOMINMAX
-#define NOMINMAX
-#endif
-#include <windows.h>
-#else
-#include "winlnxdefs.h"
-#endif
+#pragma once
 
 #ifdef PANDORA
+/* FIXME: Check the use of this typedef. */
 typedef char GLchar;
 #endif
-
-#endif // PLATFORM_H

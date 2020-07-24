@@ -1,8 +1,3 @@
-#ifdef OS_WINDOWS
-# include <windows.h>
-#else
-# include <winlnxdefs.h>
-#endif // OS_WINDOWS
 #include <assert.h>
 
 #include <PluginAPI.h>

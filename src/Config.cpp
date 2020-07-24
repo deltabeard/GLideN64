@@ -1,8 +1,3 @@
-#ifdef OS_WINDOWS
-# include <windows.h>
-#else
-# include "winlnxdefs.h"
-#endif // OS_WINDOWS
 #include "RSP.h"
 #include "PluginAPI.h"
 #include "Config.h"

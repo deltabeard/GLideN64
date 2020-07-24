@@ -1,9 +1,3 @@
-#ifdef OS_WINDOWS
-# include <windows.h>
-#else
-# include "winlnxdefs.h"
-#endif // OS_WINDOWS
-
 #include "PluginAPI.h"
 
 extern "C" {

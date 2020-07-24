@@ -19,7 +19,10 @@
 #include "Graphics/Context.h"
 #include "Graphics/Parameters.h"
 #include "DisplayWindow.h"
-#include <GLideN64/GLideN64_libretro.h>
+
+#ifdef __LIBRETRO__
+#include "GLideN64_libretro.h"
+#endif
 
 using namespace std;
 using namespace graphics;
