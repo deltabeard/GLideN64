@@ -21,7 +21,7 @@
 using namespace std;
 using namespace graphics;
 
-#define INDEXMAP_SIZE 80U
+#define INDEXMAP_SIZE 80
 
 #ifdef __VEC4_OPT
 #define VEC_OPT 4U
@@ -394,7 +394,7 @@ void gSPLightVertexStandard(u32 v, SPVertex * spVtx)
 {
 #ifndef __NEON_OPT
 	if (!isHWLightingAllowed()) {
-		for(int j = 0; j < VNUM; ++j) {
+		for(u32 j = 0; j < VNUM; ++j) {
 			SPVertex & vtx = spVtx[v+j];
 			vtx.r = gSP.lights.rgb[gSP.numLights][R];
 			vtx.g = gSP.lights.rgb[gSP.numLights][G];
@@ -414,7 +414,7 @@ void gSPLightVertexStandard(u32 v, SPVertex * spVtx)
 			vtx.b = min(1.0f, vtx.b);
 		}
 	} else {
-		for(int j = 0; j < VNUM; ++j) {
+		for(u32 j = 0; j < VNUM; ++j) {
 			SPVertex & vtx = spVtx[v+j];
 			TransformVectorNormalize(&vtx.r, gSP.matrix.modelView[gSP.matrix.modelViewi]);
 			vtx.HWLight = gSP.numLights;
@@ -429,7 +429,7 @@ void gSPLightVertexStandard(u32 v, SPVertex * spVtx)
 template <u32 VNUM>
 void gSPLightVertexCBFD_basic(u32 v, SPVertex * spVtx)
 {
-	for (int j = 0; j < VNUM; ++j) {
+	for (u32 j = 0; j < VNUM; ++j) {
 		SPVertex & vtx = spVtx[v + j];
 		vtx.HWLight = 0;
 		if (vtx.flag < 0)
@@ -470,7 +470,7 @@ void gSPLightVertexCBFD_basic(u32 v, SPVertex * spVtx)
 template <u32 VNUM>
 void gSPLightVertexCBFD_advanced(u32 v, SPVertex * spVtx)
 {
-	for (int j = 0; j < VNUM; ++j) {
+	for (u32 j = 0; j < VNUM; ++j) {
 		SPVertex & vtx = spVtx[v + j];
 		vtx.HWLight = 0;
 		if (vtx.flag < 0)
@@ -539,7 +539,7 @@ template <u32 VNUM>
 void gSPPointLightVertexZeldaMM(u32 v, float _vecPos[VNUM][4], SPVertex * spVtx)
 {
 	f32 intensity = 0.0f;
-	for (int j = 0; j < VNUM; ++j) {
+	for (u32 j = 0; j < VNUM; ++j) {
 		SPVertex & vtx = spVtx[v + j];
 		vtx.HWLight = 0;
 		vtx.r = gSP.lights.rgb[gSP.numLights][R];
@@ -609,7 +609,7 @@ void gSPPointLightVertex(u32 _v, float _vecPos[VNUM][4], SPVertex * _spVtx)
 template <u32 VNUM>
 void gSPPointLightVertexAcclaim(u32 v, SPVertex * spVtx)
 {
-	for (int j = 0; j < VNUM; ++j) {
+	for (u32 j = 0; j < VNUM; ++j) {
 		SPVertex & vtx = spVtx[v + j];
 		vtx.HWLight = 0;
 
@@ -682,7 +682,7 @@ void gSPTransformVertex(u32 v, SPVertex * spVtx, float mtx[4][4])
 {
 #ifndef __NEON_OPT
 	float x, y, z;
-	for (int i = 0; i < VNUM; ++i) {
+	for (u32 i = 0; i < VNUM; ++i) {
 		SPVertex & vtx = spVtx[v+i];
 		x = vtx.x;
 		y = vtx.y;
@@ -722,7 +722,7 @@ void gSPProcessVertex(u32 v, SPVertex * spVtx)
 
 	if (dwnd().isAdjustScreen() && (gDP.colorImage.width > VI.width * 98 / 100)) {
 		const f32 adjustScale = dwnd().getAdjustScale();
-		for(int i = 0; i < VNUM; ++i) {
+		for(u32 i = 0; i < VNUM; ++i) {
 			SPVertex & vtx = spVtx[v+i];
 			vtx.x *= adjustScale;
 			if (gSP.matrix.projection[3][2] == -1.f)
@@ -730,13 +730,13 @@ void gSPProcessVertex(u32 v, SPVertex * spVtx)
 		}
 	}
 	if (gSP.viewport.vscale[0] < 0) {
-		for(int i = 0; i < VNUM; ++i) {
+		for(u32 i = 0; i < VNUM; ++i) {
 			SPVertex & vtx = spVtx[v+i];
 			vtx.x = -vtx.x;
 		}
 	}
 	if (gSP.viewport.vscale[1] < 0) {
-		for(int i = 0; i < VNUM; ++i) {
+		for(u32 i = 0; i < VNUM; ++i) {
 			SPVertex & vtx = spVtx[v+i];
 			vtx.y = -vtx.y;
 		}
@@ -758,7 +758,7 @@ void gSPProcessVertex(u32 v, SPVertex * spVtx)
 
 		if ((gSP.geometryMode & G_TEXTURE_GEN) != 0) {
 			if (GBI.getMicrocodeType() != F3DFLX2) {
-				for(int i = 0; i < VNUM; ++i) {
+				for(u32 i = 0; i < VNUM; ++i) {
 					SPVertex & vtx = spVtx[v+i];
 					f32 fLightDir[3] = {vtx.nx, vtx.ny, vtx.nz};
 					f32 x, y;
@@ -786,7 +786,7 @@ void gSPProcessVertex(u32 v, SPVertex * spVtx)
 					}
 				}
 			} else {
-				for(int i = 0; i < VNUM; ++i) {
+				for(u32 i = 0; i < VNUM; ++i) {
 					SPVertex & vtx = spVtx[v+i];
 					const f32 intensity = DotProduct(gSP.lookat.i_xyz[0], &vtx.nx) * 128.0f;
 					const s16 index = static_cast<s16>(intensity);
@@ -1330,14 +1330,14 @@ void gSPDMATriangles( u32 tris, u32 n ){
 	DKRTriangle *triangles = (DKRTriangle*)&RDRAM[address];
 	SPVertex * pVtx = drawer.getDMAVerticesData();
 	for (u32 i = 0; i < n; ++i) {
-		int mode = 0;
+		u32 mode = 0;
 		if (!(triangles->flag & 0x40)) {
 			if (gSP.viewport.vscale[0] > 0)
 				mode |= G_CULL_BACK;
 			else
 				mode |= G_CULL_FRONT;
 		}
-		if ((gSP.geometryMode&G_CULL_BOTH) != mode) {
+		if ((gSP.geometryMode & G_CULL_BOTH) != mode) {
 			drawer.drawDMATriangles(static_cast<u32>(pVtx - drawer.getDMAVerticesData()));
 			pVtx = drawer.getDMAVerticesData();
 			gSP.geometryMode &= ~G_CULL_BOTH;
