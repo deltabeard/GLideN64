@@ -11,14 +11,18 @@ void LogDebug(const char* f, int lin, int lvl, const char* fmt, ...)
 {
 	char buf[256];
 	int ret;
-	const char *const lvl_str[] = { "DEBUG", "VERB", "INFO", "WARN", "ERROR" };
+	va_list va;
+#ifndef MUPENPLUSAPI
+	const char *const lvl_str[] = {
+		"DEBUG", "VERB", "INFO", "WARN", "ERROR"
+	};
+#endif
 
 #ifdef NDEBUG
 	if(lvl < LOG_WARNING)
 		return;
 #endif
 
-	va_list va;
 	va_start(va, fmt);
 	ret = vsnprintf(buf, sizeof(buf), fmt, va);
 	va_end(va);
@@ -29,6 +33,7 @@ void LogDebug(const char* f, int lin, int lvl, const char* fmt, ...)
 #ifdef MUPENPLUSAPI
 	DebugMessage(lvl, "GLideN64 [%s:%d]: %s", f, lin, buf);
 #else
+	/* Compensate the fact that DEBUG is -1. */
 	lvl++;
 	fprintf(stderr, "%s: GLideN64 [%s:%d]: %s", lvl_str[lvl], f, lin, buf);
 #endif
