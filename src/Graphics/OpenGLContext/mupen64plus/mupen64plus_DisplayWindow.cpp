@@ -14,8 +14,7 @@
 #include <DisplayWindow.h>
 
 #include <libretro_private.h>
-#include "../../../../../custom/GLideN64/mupenplus/GLideN64_mupenplus.h"
-
+#include <mupen64plus-next_common.h>
 using namespace opengl;
 
 #ifdef __cplusplus
@@ -23,6 +22,7 @@ extern "C" {
 #endif
 uint32_t get_retro_screen_width();
 uint32_t get_retro_screen_height();
+#include <main/netplay.h>
 #ifdef __cplusplus
 }
 #endif
@@ -38,6 +38,7 @@ private:
 
 	bool _start() override;
 	void _stop() override;
+	void _restart() override;
 	void _swapBuffers() override;
 	void _saveScreenshot() override;
 	void _saveBufferContent(graphics::ObjectHandle _fbo, CachedTexture *_pTexture) override;
@@ -45,6 +46,9 @@ private:
 	void _changeWindow() override;
 	void _readScreen(void **_pDest, long *_pWidth, long *_pHeight) override;
 	void _readScreen2(void * _dest, int * _width, int * _height, int _front) override;
+#ifdef M64P_GLIDENUI
+	bool _supportsWithRateFunctions = true;
+#endif // M64P_GLIDENUI
 	graphics::ObjectHandle _getDefaultFramebuffer() override;
 };
 
@@ -61,8 +65,8 @@ void DisplayWindowMupen64plus::_setAttributes()
 
 bool DisplayWindowMupen64plus::_start()
 {
-	FunctionWrapper::setThreadedMode(false);
-
+	FunctionWrapper::setThreadedMode(EnableThreadedRenderer);
+	
 	_setAttributes();
 
 	m_bFullscreen = false;
@@ -81,14 +85,23 @@ bool DisplayWindowMupen64plus::_start()
 
 void DisplayWindowMupen64plus::_stop()
 {
+    FunctionWrapper::CoreVideo_Quit();
+}
+
+void DisplayWindowMupen64plus::_restart()
+{
+#ifdef M64P_GLIDENUI
+	m_resizeWidth = 0;
+	m_resizeHeight = 0;
+#endif // M64P_GLIDENUI
 }
 
 void DisplayWindowMupen64plus::_swapBuffers()
 {
 	//Don't let the command queue grow too big buy waiting on no more swap buffers being queued
-	FunctionWrapper::WaitForSwapBuffersQueued();
-
-	libretro_swap_buffer = true;
+	if(!netplay_lag())
+		FunctionWrapper::WaitForSwapBuffersQueued();
+	FunctionWrapper::CoreVideo_GL_SwapBuffers();
 }
 
 void DisplayWindowMupen64plus::_saveScreenshot()
@@ -105,6 +118,7 @@ bool DisplayWindowMupen64plus::_resizeWindow()
 	m_bFullscreen = true;
 	m_width = m_screenWidth = m_resizeWidth;
 	m_height = m_screenHeight = m_resizeHeight;
+	_setBufferSize();
 	opengl::Utils::isGLError(); // reset GL error.
 
 	return true;
@@ -155,11 +169,6 @@ void DisplayWindowMupen64plus::_readScreen2(void * _dest, int * _width, int * _h
 	if (_dest == nullptr)
 		return;
 
-	u8 *pBufferData = (u8*)malloc((*_width)*(*_height) * 4);
-	if (pBufferData == nullptr)
-		return;
-	u8 *pDest = (u8*)_dest;
-
 #if !defined(OS_ANDROID) && !defined(OS_IOS)
 	GLint oldMode;
 	glGetIntegerv(GL_READ_BUFFER, &oldMode);
@@ -167,11 +176,14 @@ void DisplayWindowMupen64plus::_readScreen2(void * _dest, int * _width, int * _h
 		glReadBuffer(GL_FRONT);
 	else
 		glReadBuffer(GL_BACK);
-	glReadPixels(0, m_heightOffset, m_screenWidth, m_screenHeight, GL_RGBA, GL_UNSIGNED_BYTE, pBufferData);
+	glReadPixels(0, m_heightOffset, m_screenWidth, m_screenHeight, GL_RGB, GL_UNSIGNED_BYTE, _dest);
 	glReadBuffer(oldMode);
 #else
+	u8 *pBufferData = (u8*)malloc((*_width)*(*_height) * 4);
+	if (pBufferData == nullptr)
+		return;
+	u8 *pDest = (u8*)_dest;
 	glReadPixels(0, m_heightOffset, m_screenWidth, m_screenHeight, GL_RGBA, GL_UNSIGNED_BYTE, pBufferData);
-#endif
 
 	//Convert RGBA to RGB
 	for (s32 y = 0; y < *_height; ++y) {
@@ -186,6 +198,7 @@ void DisplayWindowMupen64plus::_readScreen2(void * _dest, int * _width, int * _h
 	}
 
 	free(pBufferData);
+#endif
 }
 
 graphics::ObjectHandle DisplayWindowMupen64plus::_getDefaultFramebuffer()

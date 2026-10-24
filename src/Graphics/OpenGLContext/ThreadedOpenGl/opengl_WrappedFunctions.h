@@ -19,7 +19,13 @@
 #include "opengl_Command.h"
 #include "RingBufferPool.h"
 #include <string.h> // memcpy
-#include "Types.h"
+
+#include <libco.h>
+extern "C" cothread_t retro_thread;
+
+#ifdef __LIBRETRO__
+#include "GLideN64_libretro.h"
+#endif
 
 #ifdef MUPENPLUSAPI
 #include <mupenplus/GLideN64_mupenplus.h>
@@ -28,7 +34,7 @@
 #endif
 
 #if defined(__LIBRETRO__) && !defined(NO_GL_WRAP)
-#include <glsm/glsm_state_ctl.h>
+#include <glsm/glsm.h>
 #endif
 
 namespace opengl {
@@ -63,6 +69,42 @@ private:
 	GLenum m_sfactor;
 	GLenum m_dfactor;
 };
+
+class GlBlendFuncSeparateCommand : public OpenGlCommand
+{
+public:
+	GlBlendFuncSeparateCommand() :
+		OpenGlCommand(false, false, "glBlendFuncSeparate")
+	{
+	}
+
+	static std::shared_ptr<OpenGlCommand> get(GLenum sfactorcolor, GLenum dfactorcolor, GLenum sfactoralpha, GLenum dfactoralpha)
+	{
+		static int poolId = OpenGlCommandPool::get().getNextAvailablePool();
+		auto ptr = getFromPool<GlBlendFuncSeparateCommand>(poolId);
+		ptr->set(sfactorcolor, dfactorcolor, sfactoralpha, dfactoralpha);
+		return ptr;
+	}
+
+	void commandToExecute() override
+	{
+		ptrBlendFuncSeparate(m_sfactorcolor, m_dfactorcolor, m_sfactoralpha, m_dfactoralpha);
+	}
+private:
+	void set(GLenum sfactorcolor, GLenum dfactorcolor, GLenum sfactoralpha, GLenum dfactoralpha)
+	{
+		m_sfactorcolor = sfactorcolor;
+		m_dfactorcolor = dfactorcolor;
+		m_sfactoralpha = sfactoralpha;
+		m_dfactoralpha = dfactoralpha;
+	}
+
+	GLenum m_sfactorcolor;
+	GLenum m_dfactorcolor;
+	GLenum m_sfactoralpha;
+	GLenum m_dfactoralpha;
+};
+
 
 class GlPixelStoreiCommand : public OpenGlCommand
 {
@@ -4720,6 +4762,34 @@ private:
 	}
 };
 
+class GlFlushCommand : public OpenGlCommand
+{
+public:
+    GlFlushCommand() :
+            OpenGlCommand(true, true, "glFlush")
+    {
+    }
+
+    static std::shared_ptr<OpenGlCommand> get()
+    {
+        static int poolId = OpenGlCommandPool::get().getNextAvailablePool();
+        auto ptr = getFromPool<GlFlushCommand>(poolId);
+        ptr->set();
+        return ptr;
+    }
+
+    void commandToExecute() override
+    {
+        ptrFlush();
+    }
+
+private:
+    void set()
+    {
+
+    }
+};
+
 class GlCopyTexImage2DCommand : public OpenGlCommand
 {
 public:
@@ -5075,6 +5145,57 @@ private:
 	m64p_error* m_returnValue;
 };
 
+class CoreVideoSetVideoModeWithRateCommand : public OpenGlCommand
+{
+public:
+	CoreVideoSetVideoModeWithRateCommand() :
+		OpenGlCommand(true, false, "CoreVideo_SetVideoModeWithRate", false)
+	{
+	}
+
+	static std::shared_ptr<OpenGlCommand> get(int screenWidth, int screenHeight, int refreshRate, int bitsPerPixel, m64p_video_mode mode,
+		m64p_video_flags flags, m64p_error& returnValue)
+	{
+		static int poolId = OpenGlCommandPool::get().getNextAvailablePool();
+		auto ptr = getFromPool<CoreVideoSetVideoModeWithRateCommand>(poolId);
+		ptr->set(screenWidth, screenHeight, refreshRate, bitsPerPixel, mode, flags, returnValue);
+		return ptr;
+	}
+
+	void commandToExecute() override
+	{
+#ifdef __LIBRETRO__
+		*m_returnValue = m64p_error::M64ERR_SUCCESS;
+		glsm_ctl(GLSM_CTL_STATE_CONTEXT_RESET, NULL);
+#else
+		*m_returnValue = ::CoreVideo_SetVideoModeWithRate(m_screenWidth, m_screenHeight, m_refreshRate, m_bitsPerPixel, m_mode, m_flags);
+#endif
+
+		initGLFunctions();
+	}
+
+private:
+	void set(int screenWidth, int screenHeight, int refreshRate, int bitsPerPixel, m64p_video_mode mode,
+		m64p_video_flags flags, m64p_error& returnValue)
+	{
+		m_screenWidth = screenWidth;
+		m_screenHeight = screenHeight;
+		m_refreshRate = refreshRate;
+		m_bitsPerPixel = bitsPerPixel;
+		m_mode = mode;
+		m_flags = flags;
+		m_returnValue = &returnValue;
+	}
+
+	int m_screenWidth;
+	int m_screenHeight;
+	int m_refreshRate;
+	int m_bitsPerPixel;
+	m64p_video_mode m_mode;
+	m64p_video_flags m_flags;
+	m64p_error* m_returnValue;
+};
+
 class CoreVideoGLSetAttributeCommand : public OpenGlCommand
 {
 public:
@@ -5163,8 +5284,14 @@ public:
 	{
 #ifndef __LIBRETRO__
 		::CoreVideo_GL_SwapBuffers();
-#endif
+#else
+		libretro_swap_buffer = true;
+		if(EnableThreadedRenderer)
+		{
+			co_switch(retro_thread);
+		}
 		m_swapBuffersCallback();
+#endif
 	}
 
 private:

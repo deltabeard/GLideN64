@@ -1,6 +1,9 @@
 #ifndef GLIDEN64_LIBRETRO_H
 #define GLIDEN64_LIBRETRO_H
 
+#include <stdbool.h>
+#include <stdint.h>
+
 #ifdef GLES2
 #define GL_RGBA8 GL_RGBA
 #define NO_BLIT_BUFFER_COPY
@@ -71,6 +74,9 @@ extern uint32_t EnableTxCacheCompression;
 extern uint32_t ForceDisableExtraMem;
 extern uint32_t EnableNativeResFactor;
 extern uint32_t EnableN64DepthCompare;
+extern uint32_t EnableThreadedRenderer;
+extern bool libretro_swap_buffer;
+extern bool retro_savestate_complete;
 
 // Others
 #define RETRO_MEMORY_DD 0x100 + 1

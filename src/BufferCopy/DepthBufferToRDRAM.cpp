@@ -205,7 +205,7 @@ bool DepthBufferToRDRAM::_prepareCopy(u32& _startAddress, bool _copyChunk)
 	return true;
 }
 
-u16 DepthBufferToRDRAM::_FloatToUInt16(f32 _z)
+u16 DepthBufferToRDRAM::_FloatToUInt16(f32 _z, u32 x, u32 y)
 {
 	static const u16 * const zLUT = depthBufferList().getZLUT();
 	u32 idx = 0x3FFFF;
@@ -255,7 +255,7 @@ bool DepthBufferToRDRAM::_copy(u32 _startAddress, u32 _endAddress)
 	writeToRdram<f32, u16>(srcBuf.data(),
 						   ptr_dst,
 						   &DepthBufferToRDRAM::_FloatToUInt16,
-						   2.0f,
+						   dummyTester<f32>,
 						   1,
 						   width,
 						   height,

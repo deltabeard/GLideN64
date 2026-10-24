@@ -29,9 +29,12 @@ BufferedDrawer::BufferedDrawer(const GLInfo & _glinfo, CachedVertexAttribArray *
 	m_cachedAttribArray->enableVertexAttribArray(rectAttrib::position, true);
 	m_cachedAttribArray->enableVertexAttribArray(rectAttrib::texcoord0, true);
 	m_cachedAttribArray->enableVertexAttribArray(rectAttrib::texcoord1, true);
+	m_cachedAttribArray->enableVertexAttribArray(rectAttrib::barycoords, true);
 	glVertexAttribPointer(rectAttrib::position, 4, GL_FLOAT, GL_FALSE, sizeof(RectVertex), (const GLvoid *)(offsetof(RectVertex, x)));
 	glVertexAttribPointer(rectAttrib::texcoord0, 2, GL_FLOAT, GL_FALSE, sizeof(RectVertex), (const GLvoid *)(offsetof(RectVertex, s0)));
 	glVertexAttribPointer(rectAttrib::texcoord1, 2, GL_FLOAT, GL_FALSE, sizeof(RectVertex), (const GLvoid *)(offsetof(RectVertex, s1)));
+	if (_glinfo.coverage)
+		glVertexAttribPointer(rectAttrib::barycoords, 2, GL_FLOAT, GL_FALSE, sizeof(RectVertex), (const GLvoid *)(offsetof(RectVertex, bc0)));
 
 	/* Init buffers for triangles */
 	glGenVertexArrays(1, &m_trisBuffers.vao);
@@ -47,6 +50,10 @@ BufferedDrawer::BufferedDrawer(const GLInfo & _glinfo, CachedVertexAttribArray *
 	glVertexAttribPointer(triangleAttrib::color, 4, GL_FLOAT, GL_FALSE, sizeof(Vertex), (const GLvoid *)(offsetof(Vertex, r)));
 	glVertexAttribPointer(triangleAttrib::texcoord, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (const GLvoid *)(offsetof(Vertex, s)));
 	glVertexAttribPointer(triangleAttrib::modify, 4, GL_BYTE, GL_TRUE, sizeof(Vertex), (const GLvoid *)(offsetof(Vertex, modify)));
+	if (_glinfo.coverage) {
+		m_cachedAttribArray->enableVertexAttribArray(triangleAttrib::barycoords, true);
+		glVertexAttribPointer(triangleAttrib::barycoords, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (const GLvoid*)(offsetof(Vertex, bc0)));
+	}
 }
 
 void BufferedDrawer::_initBuffer(Buffer & _buffer, GLuint _bufSize)
@@ -109,7 +116,7 @@ void BufferedDrawer::_updateRectBuffer(const graphics::Context::DrawRectParamete
 		return;
 	}
 
-	const u32 crc = CRC_Calculate(0xFFFFFFFF, _params.vertices, dataSize);
+	const u64 crc = CRC_Calculate(UINT64_MAX, _params.vertices, dataSize);
 	auto iter = m_rectBufferOffsets.find(crc);
 	if (iter != m_rectBufferOffsets.end()) {
 		buffer.pos = iter->second;
@@ -162,6 +169,8 @@ void BufferedDrawer::_convertFromSPVertex(bool _flatColors, u32 _count, const SP
 		dst.s = src.s;
 		dst.t = src.t;
 		dst.modify = src.modify;
+		dst.bc0 = src.bc0;
+		dst.bc1 = src.bc1;
 	}
 }
 

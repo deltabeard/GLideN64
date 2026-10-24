@@ -8,6 +8,7 @@
 #include <Graphics/Context.h>
 #include <Graphics/Parameters.h>
 #include <DisplayWindow.h>
+#include <windows/ScreenShot.h>
 #include <Graphics/OpenGLContext/ThreadedOpenGl/opengl_Wrapper.h>
 
 using namespace opengl;
@@ -20,6 +21,7 @@ public:
 private:
 	bool _start() override;
 	void _stop() override;
+	void _restart() override;
 	void _swapBuffers() override;
 	void _saveScreenshot() override;
 	void _saveBufferContent(graphics::ObjectHandle _fbo, CachedTexture *_pTexture) override;
@@ -28,6 +30,7 @@ private:
 	void _readScreen(void **_pDest, long *_pWidth, long *_pHeight) override;
 	void _readScreen2(void * _dest, int * _width, int * _height, int _front) override {}
 	graphics::ObjectHandle _getDefaultFramebuffer() override;
+	bool _borderlessDevice();
 };
 
 DisplayWindow & DisplayWindow::get()
@@ -47,6 +50,11 @@ bool DisplayWindowWindows::_start()
 void DisplayWindowWindows::_stop()
 {
 	FunctionWrapper::windowsStop();
+}
+
+void DisplayWindowWindows::_restart()
+{
+
 }
 
 void DisplayWindowWindows::_swapBuffers()
@@ -102,18 +110,20 @@ void DisplayWindowWindows::_changeWindow()
 	static HMENU	windowedMenu;
 
 	if (!m_bFullscreen) {
-		DEVMODE fullscreenMode;
-		memset( &fullscreenMode, 0, sizeof(DEVMODE) );
-		fullscreenMode.dmSize = sizeof(DEVMODE);
-		fullscreenMode.dmPelsWidth = config.video.fullscreenWidth;
-		fullscreenMode.dmPelsHeight = config.video.fullscreenHeight;
-		fullscreenMode.dmBitsPerPel = 32;
-		fullscreenMode.dmDisplayFrequency = config.video.fullscreenRefresh;
-		fullscreenMode.dmFields = DM_BITSPERPEL | DM_PELSWIDTH | DM_PELSHEIGHT | DM_DISPLAYFREQUENCY;
+		if (config.video.borderless == 0u) {
+			DEVMODE fullscreenMode;
+			memset(&fullscreenMode, 0, sizeof(DEVMODE));
+			fullscreenMode.dmSize = sizeof(DEVMODE);
+			fullscreenMode.dmPelsWidth = config.video.fullscreenWidth;
+			fullscreenMode.dmPelsHeight = config.video.fullscreenHeight;
+			fullscreenMode.dmBitsPerPel = 32;
+			fullscreenMode.dmDisplayFrequency = config.video.fullscreenRefresh;
+			fullscreenMode.dmFields = DM_BITSPERPEL | DM_PELSWIDTH | DM_PELSHEIGHT | DM_DISPLAYFREQUENCY;
 
-		if (ChangeDisplaySettings( &fullscreenMode, CDS_FULLSCREEN ) != DISP_CHANGE_SUCCESSFUL) {
-			MessageBox( NULL, L"Failed to change display mode", pluginNameW, MB_ICONERROR | MB_OK );
-			return;
+			if (ChangeDisplaySettings(&fullscreenMode, CDS_FULLSCREEN) != DISP_CHANGE_SUCCESSFUL) {
+				MessageBoxW(NULL, L"Failed to change display mode", pluginNameW, MB_ICONERROR | MB_OK);
+				return;
+			}
 		}
 
 		ShowCursor( FALSE );
@@ -156,11 +166,69 @@ void DisplayWindowWindows::_changeWindow()
 	}
 }
 
+namespace {
+struct Monitors
+{
+	std::vector<HMONITOR> hMonitors;
+	std::vector<RECT> rcMonitors;
+
+	static BOOL CALLBACK MonitorEnum(HMONITOR hMon, HDC /*hdc*/, LPRECT lprcMonitor, LPARAM pData)
+	{
+		auto pMonitors = reinterpret_cast<Monitors*>(pData);
+		pMonitors->hMonitors.push_back(hMon);
+		pMonitors->rcMonitors.push_back(*lprcMonitor);
+		return TRUE;
+	}
+
+	Monitors()
+	{
+		EnumDisplayMonitors(0, 0, MonitorEnum, (LPARAM)this);
+	}
+};
+}
+
+
+bool DisplayWindowWindows::_borderlessDevice()
+{
+	std::wstring deviceName{ config.video.deviceName };
+	if (deviceName.empty()) {
+		DEVMODE deviceMode;
+		if (EnumDisplaySettings(NULL, ENUM_CURRENT_SETTINGS, &deviceMode) != 0) {
+			m_screenWidth = static_cast<u32>(deviceMode.dmPelsWidth);
+			m_screenHeight = static_cast<u32>(deviceMode.dmPelsHeight);
+			m_heightOffset = 0;
+			_setBufferSize();
+			return (SetWindowPos(hWnd, NULL, 0, 0, m_screenWidth + 1, m_screenHeight, SWP_NOACTIVATE | SWP_NOZORDER | SWP_SHOWWINDOW) == TRUE);
+		}
+	}
+
+	Monitors monitors;
+	MONITORINFOEX minfo;
+	minfo.cbSize = sizeof(MONITORINFOEX);
+	for (size_t i = 0; i < monitors.hMonitors.size(); ++i) {
+		if (GetMonitorInfo(monitors.hMonitors[i], &minfo) && deviceName == minfo.szDevice) {
+			int X = monitors.rcMonitors[i].left;
+			int Y = monitors.rcMonitors[i].top;
+			m_screenWidth = std::abs(monitors.rcMonitors[i].right - monitors.rcMonitors[i].left);
+			m_screenHeight = std::abs(monitors.rcMonitors[i].top - monitors.rcMonitors[i].bottom);
+			m_heightOffset = 0;
+			_setBufferSize();
+			return (SetWindowPos(hWnd, NULL, X, Y, m_screenWidth + 1, m_screenHeight, SWP_NOACTIVATE | SWP_NOZORDER | SWP_SHOWWINDOW) == TRUE);
+		}
+	}
+	return false;
+}
+
 bool DisplayWindowWindows::_resizeWindow()
 {
 	RECT windowRect, statusRect, toolRect;
 
+	windowRect = statusRect = toolRect = { 0 };
+
 	if (m_bFullscreen) {
+		if (config.video.borderless != 0u && _borderlessDevice())
+			return true;
+
 		m_screenWidth = config.video.fullscreenWidth;
 		m_screenHeight = config.video.fullscreenHeight;
 		m_heightOffset = 0;
@@ -173,12 +241,12 @@ bool DisplayWindowWindows::_resizeWindow()
 		_setBufferSize();
 
 		GetClientRect( hWnd, &windowRect );
-		GetWindowRect( hStatusBar, &statusRect );
+
+		if (hStatusBar)
+			GetWindowRect( hStatusBar, &statusRect );
 
 		if (hToolBar)
 			GetWindowRect( hToolBar, &toolRect );
-		else
-			toolRect.bottom = toolRect.top = 0;
 
 		m_heightOffset = (statusRect.bottom - statusRect.top);
 		windowRect.right = windowRect.left + config.video.windowedWidth - 1;

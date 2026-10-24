@@ -1,5 +1,6 @@
 #include <stdarg.h>
-#include "GLideNHQ/Ext_TxFilter.h"
+#include <osal_files.h>
+#include "GLideNHQ/TxFilterExport.h"
 #include <Graphics/Context.h>
 #include <Graphics/Parameters.h>
 
@@ -9,6 +10,7 @@
 #include "FrameBuffer.h"
 #include "TextureFilterHandler.h"
 #include "DisplayWindow.h"
+#include "DisplayLoadProgress.h"
 #include "wst.h"
 
 static
@@ -47,10 +49,24 @@ u32 TextureFilterHandler::_getConfigOptions() const
 		options |= RICE_HIRESTEXTURES;
 	if (config.textureFilter.txForce16bpp)
 		options |= FORCE16BPP_TEX | FORCE16BPP_HIRESTEX;
+	if (config.textureFilter.txCacheCompression)
+		options |= GZ_TEXCACHE | GZ_HIRESTEXCACHE;
+	if (config.textureFilter.txSaveCache)
+		options |= (DUMP_TEXCACHE | DUMP_HIRESTEXCACHE);
 	if (config.textureFilter.txHiresFullAlphaChannel)
 		options |= LET_TEXARTISTS_FLY;
+	if (config.hotkeys.enabledKeys[Config::HotKey::hkTexDump] != 0 || config.textureFilter.txDump)
+		options |= DUMP_TEX;
+	if (config.textureFilter.txStrongCRC)
+		options |= DUMP_STRONG_CRC;
 	if (config.textureFilter.txDeposterize)
 		options |= DEPOSTERIZE;
+	if (config.textureFilter.txEnhancedTextureFileStorage)
+		options |= FILE_TEXCACHE;
+	if (config.textureFilter.txHiresTextureFileStorage)
+		options |= FILE_HIRESTEXCACHE;
+	if (config.textureFilter.txNoTextureFileStorage)
+		options |= FILE_NOTEXCACHE;
 	return options;
 }
 
@@ -69,12 +85,32 @@ void TextureFilterHandler::init()
 	wchar_t wRomName[32];
 	::mbstowcs(wRomName, RSP.romname, 32);
 
-#ifndef NODHQ
 	wchar_t txPath[PLUGIN_PATH_SIZE + 16];
 	wchar_t * pTexPackPath = config.textureFilter.txPath;
+	if (::wcslen(config.textureFilter.txPath) == 0 ||
+		osal_is_absolute_path(config.textureFilter.txPath) == 0) {
+		api().GetUserDataPath(txPath);
+		gln_wcscat(txPath, wst("/hires_texture"));
+		pTexPackPath = txPath;
+	}
 
 	wchar_t txCachePath[PLUGIN_PATH_SIZE + 16];
 	wchar_t * pTexCachePath = config.textureFilter.txCachePath;
+	if (::wcslen(config.textureFilter.txCachePath) == 0 ||
+		osal_is_absolute_path(config.textureFilter.txCachePath) == 0) {
+		api().GetUserCachePath(txCachePath);
+		gln_wcscat(txCachePath, wst("/cache"));
+		pTexCachePath = txCachePath;
+	}
+
+	wchar_t txDumpPath[PLUGIN_PATH_SIZE + 16];
+	wchar_t * pTexDumpPath = config.textureFilter.txDumpPath;
+	if (::wcslen(config.textureFilter.txDumpPath) == 0 ||
+		osal_is_absolute_path(config.textureFilter.txDumpPath) == 0) {
+		api().GetUserCachePath(txDumpPath);
+		gln_wcscat(txDumpPath, wst("/texture_dump"));
+		pTexDumpPath = txDumpPath;
+	}
 
 	m_inited = txfilter_init(maxTextureSize, // max texture width supported by hardware
 		maxTextureSize, // max texture height supported by hardware
@@ -82,19 +118,25 @@ void TextureFilterHandler::init()
 		m_options,
 		config.textureFilter.txCacheSize, // cache texture to system memory
 		pTexCachePath, // path to store cache files
+		pTexDumpPath, // path to folder with dumped textures
 		pTexPackPath, // path to texture packs folder
-		wRomName); // name of ROM. must be no longer than 256 characters
-#endif
+		wRomName, // name of ROM. must be no longer than 256 characters
+		displayLoadProgress);
+
 }
 
 void TextureFilterHandler::shutdown()
 {
-#ifndef NODHQ
 	if (isInited()) {
 		txfilter_shutdown();
 		m_inited = m_options = 0;
 	}
-#endif
+}
+
+void TextureFilterHandler::dumpcache()
+{
+	if (isInited())
+		txfilter_dumpcache();
 }
 
 TextureFilterHandler TFH;

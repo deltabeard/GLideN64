@@ -6,7 +6,7 @@
 
 void(*renderCallback)(int) = nullptr;
 
-m64p_error PluginAPI::PluginStartup(m64p_dynlib_handle _CoreLibHandle)
+m64p_error PluginAPI::PluginStartup(m64p_dynlib_handle _CoreLibHandle, void* Context, void (*DebugCallback)(void *, int, const char *))
 {
 	return M64ERR_SUCCESS;
 }
@@ -40,7 +40,7 @@ m64p_error PluginAPI::PluginGetVersion(
 		*_APIVersion = VIDEO_PLUGIN_API_VERSION;
 
 	if (_PluginNamePtr != nullptr)
-		*_PluginNamePtr = pluginName;
+		*_PluginNamePtr = pluginNameWithRevision;
 
 	if (_Capabilities != nullptr)
 	{

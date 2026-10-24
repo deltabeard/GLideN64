@@ -8,7 +8,7 @@ using namespace graphics;
 using namespace opengl;
 
 #ifdef __LIBRETRO__
-#include <glsm/glsm_caps.h>
+#include <glsm/glsm.h>
 // TODO: Fix macro mess
 #undef glDisable
 #undef glEnable
@@ -34,6 +34,7 @@ void CachedEnable::enable(bool _enable)
 		return;
 
 	if (_enable) {
+		// This is all to support macro shenanigans for the libretro glsm implementation
 		switch(GLenum(m_parameter)) {
 			case GL_BLEND:
 				if(IS_GL_FUNCTION_VALID(Enablei))
@@ -179,6 +180,15 @@ void CachedBlending::setBlending(Parameter _sfactor, Parameter _dfactor)
 	if (update(_sfactor, _dfactor))
 		glBlendFunc(GLenum(_sfactor), GLenum(_dfactor));
 }
+
+/*---------------CachedBlendingSeparate-------------*/
+
+void CachedBlendingSeparate::setBlendingSeparate(Parameter _sfactorcolor, Parameter _dfactorcolor, Parameter _sfactoralpha, Parameter _dfactoralpha)
+{
+	if (update(_sfactorcolor, _dfactorcolor, _sfactoralpha, _dfactoralpha))
+		glBlendFuncSeparate(GLenum(_sfactorcolor), GLenum(_dfactorcolor), GLenum(_sfactoralpha), GLenum(_dfactoralpha));
+}
+
 
 /*---------------CachedBlendColor-------------*/
 
@@ -329,6 +339,12 @@ CachedBlending * CachedFunctions::getCachedBlending()
 {
 	return &m_blending;
 }
+
+CachedBlendingSeparate * CachedFunctions::getCachedBlendingSeparate()
+{
+	return &m_blendingseparate;
+}
+
 
 CachedBlendColor * CachedFunctions::getCachedBlendColor()
 {

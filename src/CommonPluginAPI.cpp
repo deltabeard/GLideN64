@@ -1,8 +1,9 @@
 #include "PluginAPI.h"
+#include "DisplayWindow.h"
 
 extern "C" {
 
-EXPORT BOOL CALL gln64InitiateGFX (GFX_INFO Gfx_Info)
+EXPORT int CALL gln64InitiateGFX (GFX_INFO Gfx_Info)
 {
 	return api().InitiateGFX(Gfx_Info);
 }
@@ -73,4 +74,14 @@ EXPORT void CALL gln64FBWList(FrameBufferModifyEntry *plist, unsigned int size)
 	api().FBWList(plist, size);
 }
 #endif
+
+EXPORT void CALL gln64DestroyGfxContext(void)
+{
+	dwnd().destroyGfxContext();
+}
+
+EXPORT void CALL gln64ReinitGfxContext(void)
+{
+	dwnd().reinitGfxContext();
+}
 }

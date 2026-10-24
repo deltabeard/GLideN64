@@ -19,6 +19,15 @@ bool DisplayWindow::start()
 	m_drawer._initData();
 	m_buffersSwapCount = 0;
 
+	// only query max MSAA when needed
+	if (m_maxMsaa == 0) {
+		m_maxMsaa = gfxContext.getMaxMSAALevel();
+	}
+
+	if (m_maxAnisotropy == 0) {
+		m_maxAnisotropy = static_cast<u32>(gfxContext.getMaxAnisotropy());
+	}
+
 	return true;
 }
 
@@ -31,12 +40,26 @@ void DisplayWindow::stop()
 
 void DisplayWindow::restart()
 {
+	_restart();
 	m_bResizeWindow = true;
+}
+
+void DisplayWindow::destroyGfxContext()
+{
+	m_drawer._destroyData();
+	gfxContext.destroy();
+}
+
+void DisplayWindow::reinitGfxContext()
+{
+	gfxContext.init();
+	m_drawer._initData();
 }
 
 void DisplayWindow::swapBuffers()
 {
 	m_drawer.drawOSD();
+	m_drawer.clearStatistics();
 	_swapBuffers();
 	if (!RSP.LLE) {
 		if ((config.generalEmulation.hacks & hack_doNotResetOtherModeL) == 0)
@@ -68,6 +91,14 @@ void DisplayWindow::saveBufferContent(FrameBuffer * _pBuffer)
 
 void DisplayWindow::saveBufferContent(graphics::ObjectHandle _fbo, CachedTexture *_pTexture)
 {
+	if (wcslen(m_strScreenDirectory) == 0) {
+		api().FindPluginPath(m_strScreenDirectory);
+		std::wstring pluginPath(m_strScreenDirectory);
+		if (pluginPath.back() != L'/')
+			pluginPath += L'/';
+		::wcsncpy(m_strScreenDirectory, pluginPath.c_str(), std::min(size_t(PLUGIN_PATH_SIZE), pluginPath.length() + 1));
+	}
+	_saveBufferContent(_fbo, _pTexture);
 }
 
 bool DisplayWindow::changeWindow()
@@ -86,8 +117,7 @@ void DisplayWindow::closeWindow()
 {
 	if (!m_bToggleFullscreen || !m_bFullscreen)
 		return;
-	if (m_drawer.getDrawingState() != DrawingState::Non)
-		m_drawer._destroyData();
+	m_drawer._destroyData();
 	_changeWindow();
 	m_bToggleFullscreen = false;
 }
@@ -120,8 +150,8 @@ void DisplayWindow::updateScale()
 {
 	if (VI.width == 0 || VI.height == 0)
 		return;
-	m_scaleX = m_width / (float)VI.width;
-	m_scaleY = m_height / (float)VI.height;
+	m_scaleX = static_cast<f32>(m_width) / static_cast<f32>(VI.width);
+	m_scaleY = static_cast<f32>(m_height) / static_cast<f32>(VI.height);
 }
 
 void DisplayWindow::_setBufferSize()
@@ -156,12 +186,21 @@ void DisplayWindow::_setBufferSize()
 			m_height = m_screenHeight;
 		}
 		break;
-	case Config::aAdjust: // adjust
+	case Config::aAdjust43: // adjust
 		m_width = m_screenWidth;
 		m_height = m_screenHeight;
 		if (m_screenWidth * 3 / 4 > m_screenHeight) {
 			f32 width43 = m_screenHeight * 4.0f / 3.0f;
 			m_adjustScale = width43 / m_screenWidth;
+			m_bAdjustScreen = true;
+		}
+		break;
+	case Config::aAdjust169: // adjust
+		m_width = m_screenWidth;
+		m_height = m_screenHeight;
+		if (m_screenWidth * 9 / 16 > m_screenHeight) {
+			f32 width169 = m_screenHeight * 16.0f / 9.0f;
+			m_adjustScale = width169 / m_screenWidth;
 			m_bAdjustScreen = true;
 		}
 		break;
@@ -180,4 +219,14 @@ void DisplayWindow::readScreen(void **_pDest, long *_pWidth, long *_pHeight)
 void DisplayWindow::readScreen2(void * _dest, int * _width, int * _height, int _front)
 {
 	_readScreen2(_dest, _width, _height, _front);
+}
+
+u32 DisplayWindow::maxMSAALevel() const
+{
+	return m_maxMsaa;
+}
+
+u32 DisplayWindow::maxAnisotropy() const
+{
+	return m_maxAnisotropy;
 }

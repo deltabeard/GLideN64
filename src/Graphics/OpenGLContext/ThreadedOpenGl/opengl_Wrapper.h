@@ -18,12 +18,13 @@ namespace opengl {
 
 	class FunctionWrapper
 	{
+    public:
+		static void commandLoop();
 	private:
 		static void executeCommand(std::shared_ptr<OpenGlCommand> _command);
 
 		static void executePriorityCommand(std::shared_ptr<OpenGlCommand> _command);
 
-		static void commandLoop();
 
 		static BlockingReaderWriterQueue<std::shared_ptr<OpenGlCommand>> m_commandQueue;
 		static BlockingReaderWriterQueue<std::shared_ptr<OpenGlCommand>> m_commandQueueHighPriority;
@@ -60,6 +61,7 @@ namespace opengl {
 		static void setThreadedMode(u32 _threaded);
 
 		static void wrBlendFunc(GLenum sfactor, GLenum dfactor);
+		static void wrBlendFuncSeparate(GLenum sfactorcolor, GLenum dfactorcolor, GLenum sfactoralpha, GLenum dfactoralpha);
 		static void wrPixelStorei(GLenum pname, GLint param);
 		static void wrClearColor(GLfloat red, GLfloat green, GLfloat blue, GLfloat alpha);
 		static void wrCullFace(GLenum mode);
@@ -191,6 +193,7 @@ namespace opengl {
 		static void wrDrawRangeElementsBaseVertex(GLenum mode, GLuint start, GLuint end, GLsizei count, GLenum type, const u16* indices, GLint basevertex);
 		static void wrFlushMappedBufferRange(GLenum target, GLintptr offset, GLsizeiptr length);
 		static void wrFinish();
+		static void wrFlush();
 		static void wrCopyTexImage2D(GLenum target, GLint level, GLenum internalformat, GLint x, GLint y, GLsizei width, GLsizei height, GLint border);
 		static void wrDebugMessageCallback(GLDEBUGPROC callback, const void *userParam);
 		static void wrDebugMessageControl(GLenum source, GLenum type, GLenum severity, GLsizei count, const GLuint *ids, GLboolean enabled);
@@ -206,6 +209,7 @@ namespace opengl {
 		static m64p_error CoreVideo_Init();
 		static void CoreVideo_Quit();
 		static m64p_error CoreVideo_SetVideoMode(int screenWidth, int screenHeight, int bitsPerPixel, m64p_video_mode mode, m64p_video_flags flags);
+		static m64p_error CoreVideo_SetVideoModeWithRate(int screenWidth, int screenHeight, int refreshRate, int bitsPerPixel, m64p_video_mode mode, m64p_video_flags flags);
 		static void CoreVideo_GL_SetAttribute(m64p_GLattr attribute, int value);
 		static void CoreVideo_GL_GetAttribute(m64p_GLattr attribute, int *value);
 		static void CoreVideo_GL_SwapBuffers();

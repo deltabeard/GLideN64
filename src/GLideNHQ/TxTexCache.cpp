@@ -27,16 +27,18 @@
 
 #include "TxTexCache.h"
 #include "TxDbg.h"
+#include <osal_files.h>
 #include <zlib.h>
 
-#define TEXCACHE_DUMP_ENABLED (FILE_TEXCACHE)
+#define TEXCACHE_DUMP_ENABLED (FILE_TEXCACHE|DUMP_TEXCACHE)
 
 TxTexCache::~TxTexCache()
 {
 }
 
-TxTexCache::TxTexCache(int options, int cachesize, const wchar_t *cachePath, const wchar_t *ident)
-						 : TxCache((options & ~FILE_HIRESTEXCACHE), cachesize, cachePath, ident)
+TxTexCache::TxTexCache(int options, int cachesize, const wchar_t *cachePath, const wchar_t *ident,
+					   dispInfoFuncExt callback)
+						 : TxCache((options & ~(GZ_HIRESTEXCACHE | FILE_HIRESTEXCACHE)), cachesize, cachePath, ident, callback)
 						 , _cacheDumped(false)
 {
 	/* assert local options */
@@ -51,7 +53,7 @@ TxTexCache::TxTexCache(int options, int cachesize, const wchar_t *cachePath, con
 	}
 }
 
-bool TxTexCache::add(uint64 checksum, GHQTexInfo *info)
+bool TxTexCache::add(Checksum checksum, GHQTexInfo *info)
 {
 	const bool res = TxCache::add(checksum, info);
 	if (res)
@@ -82,5 +84,6 @@ int TxTexCache::_getConfig() const
 		(FILTER_MASK |
 		ENHANCEMENT_MASK |
 		FORCE16BPP_TEX |
-		FILE_TEXCACHE);
+		FILE_TEXCACHE |
+		GZ_TEXCACHE);
 }

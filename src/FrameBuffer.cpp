@@ -1,13 +1,13 @@
 #include <assert.h>
 #include <math.h>
 #include <algorithm>
+#include <cstring>
 #include <vector>
 #include "FrameBuffer.h"
 #include "DepthBuffer.h"
 #include "N64.h"
 #include "RSP.h"
 #include "RDP.h"
-#include "gDP.h"
 #include "VI.h"
 #include "Textures.h"
 #include "Combiner.h"
@@ -25,47 +25,21 @@
 
 #include <Graphics/Context.h>
 #include <Graphics/Parameters.h>
+#include <Graphics/ColorBufferReader.h>
 #include "DisplayWindow.h"
 
 using namespace std;
 using namespace graphics;
 
 FrameBuffer::FrameBuffer()
-	: m_startAddress(0)
-	, m_endAddress(0)
-	, m_size(0)
-	, m_width(0)
-	, m_height(0)
-	, m_originX(0)
-	, m_originY(0)
-	, m_swapCount(0)
-	, m_scale(0)
-	, m_copiedToRdram(false)
-	, m_fingerprint(false)
-	, m_cleared(false)
-	, m_changed(false)
-	, m_cfb(false)
-	, m_isDepthBuffer(false)
-	, m_isPauseScreen(false)
-	, m_isOBScreen(false)
-	, m_isMainBuffer(false)
-	, m_readable(false)
-	, m_loadType(LOADTYPE_BLOCK)
-	, m_pDepthBuffer(nullptr)
-	, m_pResolveTexture(nullptr)
-	, m_resolved(false)
-	, m_pSubTexture(nullptr)
-	, m_copied(false)
-	, m_pFrameBufferCopyTexture(nullptr)
-	, m_copyFBO(ObjectHandle::defaultFramebuffer)
-	, m_validityChecked(0)
+	: m_copyFBO(ObjectHandle::defaultFramebuffer)
+	, m_ColorBufferFBO(0)
+	, m_pColorBufferTexture(nullptr)
 {
-	m_loadTileOrigin.uls = m_loadTileOrigin.ult = 0;
 	m_pTexture = textureCache().addFrameBufferTexture(config.video.multisampling != 0 ?
 		textureTarget::TEXTURE_2D_MULTISAMPLE : textureTarget::TEXTURE_2D);
 	m_FBO = gfxContext.createFramebuffer();
 
-	m_pDepthTexture = nullptr;
 	if (config.frameBufferEmulation.copyDepthToMainDepthBuffer != 0)
 		m_depthFBO = gfxContext.createFramebuffer();
 }
@@ -83,6 +57,8 @@ FrameBuffer::~FrameBuffer()
 	textureCache().removeFrameBufferTexture(m_pResolveTexture);
 	textureCache().removeFrameBufferTexture(m_pSubTexture);
 	textureCache().removeFrameBufferTexture(m_pFrameBufferCopyTexture);
+
+	_destroyColorFBTexure();
 }
 
 static
@@ -90,8 +66,8 @@ void _initFrameBufferTexture(u32 _address, u16 _width, u16 _height, f32 _scale, 
 {
 	const FramebufferTextureFormats & fbTexFormats = gfxContext.getFramebufferTextureFormats();
 
-	_pTexture->width = (u16)(u32)(_width * _scale);
-	_pTexture->height = (u16)(u32)(_height * _scale);
+	_pTexture->width = static_cast<u16>(static_cast<u32>(static_cast<f32>(_width) * _scale));
+	_pTexture->height = static_cast<u16>(static_cast<u32>(static_cast<f32>(_height) * _scale));
 	_pTexture->format = _format;
 	_pTexture->size = _size;
 	_pTexture->clampS = 1;
@@ -105,6 +81,8 @@ void _initFrameBufferTexture(u32 _address, u16 _width, u16 _height, f32 _scale, 
 	_pTexture->mirrorS = 0;
 	_pTexture->mirrorT = 0;
 	_pTexture->textureBytes = _pTexture->width * _pTexture->height;
+	_pTexture->hdRatioS = _scale;
+	_pTexture->hdRatioT = _scale;
 	if (_size > G_IM_SIZ_8b)
 		_pTexture->textureBytes *= fbTexFormats.colorFormatBytes;
 	else
@@ -165,7 +143,7 @@ void FrameBuffer::_setAndAttachTexture(ObjectHandle _fbo, CachedTexture *_pTextu
 
 bool FrameBuffer::isAuxiliary() const
 {
-	return m_width != VI.width;
+	return m_width != VI.width || m_size < G_IM_SIZ_16b;
 }
 
 void FrameBuffer::init(u32 _address, u16 _format, u16 _size, u16 _width, bool _cfb)
@@ -240,6 +218,9 @@ void FrameBuffer::copyRdram()
 	const u32 height = _cutHeight(m_startAddress, m_height, stride);
 	if (height == 0)
 		return;
+
+	m_cleared = false;
+
 	const u32 dataSize = stride * height;
 
 	// Auxiliary frame buffer
@@ -250,14 +231,13 @@ void FrameBuffer::copyRdram()
 		// Validity check will see that the RDRAM is the same and thus the buffer is valid, which is false.
 		const u32 twoPercent = max(4U, dataSize / 200);
 		u32 start = m_startAddress >> 2;
-		u32 * pData = (u32*)RDRAM;
+		u32 * pData = reinterpret_cast<u32*>(RDRAM);
 		for (u32 i = 0; i < twoPercent; ++i) {
 			if (i < 4)
 				pData[start++] = fingerprint[i];
 			else
 				pData[start++] = 0;
 		}
-		m_cleared = false;
 		m_fingerprint = true;
 		return;
 	}
@@ -279,17 +259,17 @@ bool FrameBuffer::isValid(bool _forceCheck) const
 		m_validityChecked = dwnd().getBuffersSwapCount();
 	}
 
-	const u32 * const pData = (const u32*)RDRAM;
+	const u32 * const pData = reinterpret_cast<const u32*>(RDRAM);
 
 	if (m_cleared) {
 		const u32 testColor = m_clearParams.fillcolor & 0xFFFEFFFE;
 		const u32 stride = m_width << m_size >> 1;
-		const s32 lry = (s32)_cutHeight(m_startAddress, m_clearParams.lry, stride);
+		const s32 lry = static_cast<s32>(_cutHeight(m_startAddress, static_cast<u32>(m_clearParams.lry), stride));
 		if (lry == 0)
 			return false;
 
 		const u32 ci_width_in_dwords = m_width >> (3 - m_size);
-		const u32 start = (m_startAddress >> 2) + m_clearParams.uly * ci_width_in_dwords;
+		const u32 start = (m_startAddress >> 2) + static_cast<u32>(m_clearParams.uly) * ci_width_in_dwords;
 		const u32 * dst = pData + start;
 		u32 wrongPixels = 0;
 		for (s32 y = m_clearParams.uly; y < lry; ++y) {
@@ -328,6 +308,9 @@ void FrameBuffer::resolveMultisampledTexture(bool _bForce)
 		return;
 
 	if (m_resolved && !_bForce)
+		return;
+
+	if (!m_pResolveTexture)
 		return;
 
 	Context::BlitFramebuffersParams blitParams;
@@ -378,12 +361,14 @@ bool FrameBuffer::_initSubTexture(u32 _t)
 	}
 
 	m_pSubTexture = textureCache().addFrameBufferTexture(textureTarget::TEXTURE_2D);
-	_initTexture(width, height, m_pTexture->format, m_pTexture->size, m_pSubTexture);
+	_initTexture(static_cast<u16>(width), static_cast<u16>(height), m_pTexture->format, m_pTexture->size, m_pSubTexture);
 
 	m_pSubTexture->clampS = pTile->clamps;
 	m_pSubTexture->clampT = pTile->clampt;
 	m_pSubTexture->offsetS = 0.0f;
 	m_pSubTexture->offsetT = 0.0f;
+	m_pSubTexture->hdRatioS = m_pTexture->hdRatioS;
+	m_pSubTexture->hdRatioT = m_pTexture->hdRatioT;
 
 
 	_setAndAttachTexture(m_SubFBO, m_pSubTexture, _t, false);
@@ -399,8 +384,8 @@ CachedTexture * FrameBuffer::_getSubTexture(u32 _t)
 	if (!_initSubTexture(_t))
 		return m_pTexture;
 
-	s32 x0 = (s32)(m_pTexture->offsetS * m_scale);
-	s32 y0 = (s32)(m_pTexture->offsetT * m_scale);
+	s32 x0 = static_cast<s32>(m_pTexture->offsetS * m_scale);
+	s32 y0 = static_cast<s32>(m_pTexture->offsetT * m_scale);
 	s32 copyWidth = m_pSubTexture->width;
 	if (x0 + copyWidth > m_pTexture->width)
 		copyWidth = m_pTexture->width - x0;
@@ -443,7 +428,8 @@ void FrameBuffer::_initCopyTexture()
 	m_copyFBO = gfxContext.createFramebuffer();
 	m_pFrameBufferCopyTexture = textureCache().addFrameBufferTexture(config.video.multisampling != 0 ?
 		textureTarget::TEXTURE_2D_MULTISAMPLE : textureTarget::TEXTURE_2D);
-	_initTexture(m_width, VI_GetMaxBufferHeight(m_width), m_pTexture->format, m_pTexture->size, m_pFrameBufferCopyTexture);
+	_initTexture(static_cast<u16>(m_width), VI_GetMaxBufferHeight(static_cast<u16>(m_width)),
+				 m_pTexture->format, m_pTexture->size, m_pFrameBufferCopyTexture);
 	_setAndAttachTexture(m_copyFBO, m_pFrameBufferCopyTexture, 0, config.video.multisampling != 0);
 	if (config.video.multisampling != 0)
 		m_pFrameBufferCopyTexture->frameBufferTexture = CachedTexture::fbMultiSample;
@@ -498,37 +484,28 @@ CachedTexture * FrameBuffer::getTexture(u32 _t)
 	const u32 shift = (gSP.textureTile[_t]->imageAddress - m_startAddress) >> (m_size - 1);
 	const u32 factor = m_width;
 	if (m_loadType == LOADTYPE_TILE) {
-		pTexture->offsetS = (float)(m_loadTileOrigin.uls + (shift % factor));
-		pTexture->offsetT = (float)(m_loadTileOrigin.ult + shift / factor);
+		pTexture->offsetS = static_cast<f32>(m_loadTileOrigin.uls + (shift % factor));
+		pTexture->offsetT = static_cast<f32>(m_loadTileOrigin.ult + shift / factor);
 	} else {
-		pTexture->offsetS = (float)(shift % factor);
-		pTexture->offsetT = (float)(shift / factor);
+		pTexture->offsetS = static_cast<f32>(shift % factor);
+		pTexture->offsetT = static_cast<f32>(shift / factor);
 	}
+	pTexture->hdRatioS = m_pTexture->hdRatioS;
+	pTexture->hdRatioT = m_pTexture->hdRatioT;
 
 	if (!getDepthTexture && (gSP.textureTile[_t]->clamps == 0 || gSP.textureTile[_t]->clampt == 0))
 		pTexture = _getSubTexture(_t);
 
-	pTexture->scaleS = m_scale / (float)pTexture->width;
-	pTexture->scaleT = m_scale / (float)pTexture->height;
+	pTexture->scaleS = m_scale / static_cast<f32>(pTexture->width);
+	pTexture->scaleT = m_scale / static_cast<f32>(pTexture->height);
 
-	if (gSP.textureTile[_t]->shifts > 10)
-		pTexture->shiftScaleS = (float)(1 << (16 - gSP.textureTile[_t]->shifts));
-	else if (gSP.textureTile[_t]->shifts > 0)
-		pTexture->shiftScaleS = 1.0f / (float)(1 << gSP.textureTile[_t]->shifts);
-	else
-		pTexture->shiftScaleS = 1.0f;
-
-	if (gSP.textureTile[_t]->shiftt > 10)
-		pTexture->shiftScaleT = (float)(1 << (16 - gSP.textureTile[_t]->shiftt));
-	else if (gSP.textureTile[_t]->shiftt > 0)
-		pTexture->shiftScaleT = 1.0f / (float)(1 << gSP.textureTile[_t]->shiftt);
-	else
-		pTexture->shiftScaleT = 1.0f;
+	pTexture->shiftScaleS = calcShiftScaleS(*gSP.textureTile[_t]);
+	pTexture->shiftScaleT = calcShiftScaleT(*gSP.textureTile[_t]);
 
 	return pTexture;
 }
 
-CachedTexture * FrameBuffer::getTextureBG(u32 _t)
+CachedTexture * FrameBuffer::getTextureBG()
 {
 	CachedTexture *pTexture = m_pTexture;
 
@@ -539,8 +516,8 @@ CachedTexture * FrameBuffer::getTextureBG(u32 _t)
 			pTexture = _copyFrameBufferTexture();
 	}
 
-	pTexture->scaleS = m_scale / (float)pTexture->width;
-	pTexture->scaleT = m_scale / (float)pTexture->height;
+	pTexture->scaleS = m_scale / static_cast<f32>(pTexture->width);
+	pTexture->scaleT = m_scale / static_cast<f32>(pTexture->height);
 
 	pTexture->shiftScaleS = 1.0f;
 	pTexture->shiftScaleT = 1.0f;
@@ -548,6 +525,110 @@ CachedTexture * FrameBuffer::getTextureBG(u32 _t)
 	pTexture->offsetS = gSP.bgImage.imageX;
 	pTexture->offsetT = gSP.bgImage.imageY;
 	return pTexture;
+}
+
+CachedTexture * FrameBuffer::getColorFbTexture()
+{
+	if(m_pColorBufferTexture == nullptr ||
+			m_pColorBufferTexture->width != m_width ||
+			m_pColorBufferTexture->height != VI_GetMaxBufferHeight(m_width))
+	{
+		_destroyColorFBTexure();
+		_initColorFBTexture(m_width);
+	}
+
+	return m_pColorBufferTexture;
+}
+
+graphics::ObjectHandle FrameBuffer::getColorFbFbo()
+{
+	return m_ColorBufferFBO;
+}
+
+const u8 * FrameBuffer::readPixels(s32 _x0, s32 _y0, u32 _width, u32 _height, u32 _size, bool _sync)
+{
+	return m_bufferReader->readPixels(_x0, _y0, _width, _height, _size, _sync);
+}
+
+void FrameBuffer::cleanUp()
+{
+	m_bufferReader->cleanUp();
+}
+
+void FrameBuffer::_initColorFBTexture(int _width)
+{
+	m_ColorBufferFBO = gfxContext.createFramebuffer();
+
+	const FramebufferTextureFormats & fbTexFormat = gfxContext.getFramebufferTextureFormats();
+
+	m_pColorBufferTexture = textureCache().addFrameBufferTexture(Context::EglImage ? textureTarget::TEXTURE_EXTERNAL : textureTarget::TEXTURE_2D);
+	m_pColorBufferTexture->format = G_IM_FMT_RGBA;
+	m_pColorBufferTexture->size = 2;
+	m_pColorBufferTexture->clampS = 1;
+	m_pColorBufferTexture->clampT = 1;
+	m_pColorBufferTexture->frameBufferTexture = CachedTexture::fbOneSample;
+	m_pColorBufferTexture->maskS = 0;
+	m_pColorBufferTexture->maskT = 0;
+	m_pColorBufferTexture->mirrorS = 0;
+	m_pColorBufferTexture->mirrorT = 0;
+	m_pColorBufferTexture->width = _width;
+	m_pColorBufferTexture->height = VI_GetMaxBufferHeight(_width);
+	m_pColorBufferTexture->textureBytes = m_pColorBufferTexture->width * m_pColorBufferTexture->height * fbTexFormat.colorFormatBytes;
+
+	m_bufferReader.reset(gfxContext.createColorBufferReader(m_pColorBufferTexture));
+
+	// Skip this since texture is initialized in the EGL color buffer reader
+	if (!Context::EglImage)
+	{
+		Context::InitTextureParams params;
+		params.handle = m_pColorBufferTexture->name;
+		params.target = textureTarget::TEXTURE_2D;
+		params.width = m_pColorBufferTexture->width;
+		params.height = m_pColorBufferTexture->height;
+		params.internalFormat = fbTexFormat.colorInternalFormat;
+		params.format = fbTexFormat.colorFormat;
+		params.dataType = fbTexFormat.colorType;
+		gfxContext.init2DTexture(params);
+	}
+
+	{
+		Context::TexParameters params;
+		params.handle = m_pColorBufferTexture->name;
+		params.target = Context::EglImage ? textureTarget::TEXTURE_EXTERNAL : textureTarget::TEXTURE_2D;
+		params.textureUnitIndex = textureIndices::Tex[0];
+		params.minFilter = textureParameters::FILTER_LINEAR;
+		params.magFilter = textureParameters::FILTER_LINEAR;
+		gfxContext.setTextureParameters(params);
+	}
+	{
+		Context::FrameBufferRenderTarget bufTarget;
+		bufTarget.bufferHandle = ObjectHandle(m_ColorBufferFBO);
+		bufTarget.bufferTarget = bufferTarget::DRAW_FRAMEBUFFER;
+		bufTarget.attachment = bufferAttachment::COLOR_ATTACHMENT0;
+		bufTarget.textureTarget = Context::EglImageFramebuffer ? textureTarget::TEXTURE_EXTERNAL : textureTarget::TEXTURE_2D;
+		bufTarget.textureHandle = m_pColorBufferTexture->name;
+		gfxContext.addFrameBufferRenderTarget(bufTarget);
+	}
+
+	// check if everything is OK
+	assert(!gfxContext.isFramebufferError());
+
+	gfxContext.bindFramebuffer(graphics::bufferTarget::DRAW_FRAMEBUFFER, graphics::ObjectHandle::defaultFramebuffer);
+}
+
+void FrameBuffer::_destroyColorFBTexure()
+{
+	m_bufferReader.reset();
+
+	if (m_pColorBufferTexture != nullptr) {
+		textureCache().removeFrameBufferTexture(m_pColorBufferTexture);
+		m_pColorBufferTexture = nullptr;
+	}
+
+	if (m_ColorBufferFBO.isNotNull()) {
+		gfxContext.deleteFramebuffer(m_ColorBufferFBO);
+		m_ColorBufferFBO.reset();
+	}
 }
 
 FrameBufferList & FrameBufferList::get()
@@ -577,10 +658,13 @@ void FrameBufferList::destroy() {
 void FrameBufferList::setBufferChanged(f32 _maxY)
 {
 	gDP.colorImage.changed = TRUE;
-	gDP.colorImage.height = max(gDP.colorImage.height, (u32)_maxY);
-	gDP.colorImage.height = min(gDP.colorImage.height, (u32)gDP.scissor.lry);
+	gDP.colorImage.height = max(gDP.colorImage.height, static_cast<u32>(_maxY));
+	gDP.colorImage.height = min(gDP.colorImage.height, static_cast<u32>(gDP.scissor.lry));
 	if (m_pCurrent != nullptr) {
-		m_pCurrent->m_height = max(m_pCurrent->m_height, gDP.colorImage.height);
+		if (m_pCurrent->m_isMainBuffer)
+			m_pCurrent->m_height = max(m_pCurrent->m_height, min(gDP.colorImage.height, VI.height));
+		else
+			m_pCurrent->m_height = max(m_pCurrent->m_height, gDP.colorImage.height);
 		m_pCurrent->m_cfb = false;
 		m_pCurrent->m_changed = true;
 		m_pCurrent->m_copiedToRdram = false;
@@ -590,7 +674,7 @@ void FrameBufferList::setBufferChanged(f32 _maxY)
 void FrameBufferList::clearBuffersChanged()
 {
 	gDP.colorImage.changed = FALSE;
-	FrameBuffer * pBuffer = frameBufferList().findBuffer(*REG.VI_ORIGIN);
+	FrameBuffer * pBuffer = frameBufferList().findBuffer(*REG.VI_ORIGIN & 0xffffff);
 	if (pBuffer != nullptr)
 		pBuffer->m_changed = false;
 }
@@ -682,7 +766,7 @@ void FrameBufferList::_createScreenSizeBuffer()
 		return;
 	m_list.emplace_front();
 	FrameBuffer & buffer = m_list.front();
-	buffer.init(VI.width * 2, G_IM_FMT_RGBA, G_IM_SIZ_16b, VI.width, false);
+	buffer.init(VI.width * 2, G_IM_FMT_RGBA, G_IM_SIZ_16b, static_cast<u16>(VI.width), false);
 }
 
 void FrameBufferList::saveBuffer(u32 _address, u16 _format, u16 _size, u16 _width, bool _cfb)
@@ -691,7 +775,7 @@ void FrameBufferList::saveBuffer(u32 _address, u16 _format, u16 _size, u16 _widt
 		return;
 
 	if (_width == 512 && (config.generalEmulation.hacks & hack_RE2) != 0)
-		_width = *REG.VI_WIDTH;
+		_width = static_cast<u16>(*REG.VI_WIDTH);
 
 	if (config.frameBufferEmulation.enable == 0) {
 		if (m_list.empty())
@@ -832,6 +916,10 @@ void FrameBufferList::saveBuffer(u32 _address, u16 _format, u16 _size, u16 _widt
 		wnd.getDrawer().clearDepthBuffer();
 	}
 
+	if ((config.generalEmulation.hacks & hack_subscreen) != 0u &&
+		_format == G_IM_FMT_I && _size == G_IM_SIZ_8b)
+		gDP.m_subscreen = gDP.otherMode._u64 == 0x00000cf00f0a0004;
+
 	m_pCurrent->m_isDepthBuffer = _address == gDP.depthImageAddress;
 	m_pCurrent->m_isPauseScreen = m_pCurrent->m_isOBScreen = false;
 	m_pCurrent->m_copied = false;
@@ -920,7 +1008,7 @@ void FrameBufferList::attachDepthBuffer()
 	if (pCurrent == nullptr)
 		return;
 
-	DepthBuffer * pDepthBuffer = depthBufferList().getCurrent();
+	DepthBuffer * pDepthBuffer = pCurrent->m_isDepthBuffer ? depthBufferList().findBuffer(pCurrent->m_startAddress) : depthBufferList().getCurrent();
 
 	if (pCurrent->m_FBO.isNotNull() && pDepthBuffer != nullptr) {
 		pDepthBuffer->initDepthImageTexture(pCurrent);
@@ -932,7 +1020,7 @@ void FrameBufferList::attachDepthBuffer()
 				goodDepthBufferTexture = pDepthBuffer->m_pDepthBufferTexture->width == pCurrent->m_pTexture->width;
 			else
 				goodDepthBufferTexture = pDepthBuffer->m_pDepthBufferTexture->width >= pCurrent->m_pTexture->width ||
-											std::abs((s32)(pCurrent->m_width - pDepthBuffer->m_width)) < 2;
+											std::abs(static_cast<s32>(pCurrent->m_width) - static_cast<s32>(pDepthBuffer->m_width)) < 2;
 		} else {
 			goodDepthBufferTexture = pDepthBuffer->m_depthRenderbufferWidth == pCurrent->m_pTexture->width;
 		}
@@ -1006,8 +1094,6 @@ void FrameBufferList::_renderScreenSizeBuffer()
 
 	gfxContext.clearColorBuffer(0.0f, 0.0f, 0.0f, 0.0f);
 
-	TextureParam filter = textureParameters::FILTER_LINEAR;
-
 	GraphicsDrawer::BlitOrCopyRectParams blitParams;
 	blitParams.srcX0 = srcCoord[0];
 	blitParams.srcY0 = srcCoord[3];
@@ -1021,10 +1107,14 @@ void FrameBufferList::_renderScreenSizeBuffer()
 	blitParams.dstY1 = dstCoord[3];
 	blitParams.dstWidth = screenWidth;
 	blitParams.dstHeight = screenHeight + wndHeightOffset;
-	blitParams.filter = filter;
+	const bool downscale = blitParams.srcWidth >= blitParams.dstWidth || blitParams.srcHeight >= blitParams.dstHeight;
+	blitParams.filter = downscale || config.generalEmulation.enableHybridFilter > 0 ?
+		textureParameters::FILTER_LINEAR :
+		textureParameters::FILTER_NEAREST; //upscale; hybridFilter disabled
 	blitParams.mask = blitMask::COLOR_BUFFER;
 	blitParams.tex[0] = pBufferTexture;
-	blitParams.combiner = CombinerInfo::get().getTexrectCopyProgram();
+	blitParams.combiner = downscale ? CombinerInfo::get().getTexrectDownscaleCopyProgram() :
+		CombinerInfo::get().getTexrectUpscaleCopyProgram();
 	blitParams.readBuffer = pFilteredBuffer->m_FBO;
 
 	drawer.blitOrCopyTexturedRect(blitParams);
@@ -1062,13 +1152,15 @@ bool FrameBufferList::RdpUpdate::update(RdpUpdateResult & _result)
 	const s32 x1 = _SHIFTR( *REG.VI_H_START, 16, 10 );
 	const s32 y1 = _SHIFTR( *REG.VI_V_START, 16, 10 );
 	const s32 x2 = _SHIFTR( *REG.VI_H_START, 0, 10 );
-	const s32 y2 = _SHIFTR( *REG.VI_V_START, 0, 10 );
+	s32 y2 = _SHIFTR( *REG.VI_V_START, 0, 10 );
+	if (y2 < y1)
+		y2 = ispal ? 44 + 576 : 34 + 480;
 
 	const s32 delta_x = x2 - x1;
 	const s32 delta_y = y2 - y1;
 	const u32 vitype = _SHIFTR( *REG.VI_STATUS, 0, 2 );
 
-	const bool serration_pulses = (*REG.VI_STATUS & 0x40) != 0;
+	const bool serration_pulses = (*REG.VI_STATUS & VI_STATUS_SERRATE_ENABLED) != 0;
 	const bool validinterlace = ((vitype & 2) != 0 ) && serration_pulses;
 	if (validinterlace && prevserrate && emucontrolsvicurrent < 0)
 		emucontrolsvicurrent = (*REG.VI_V_CURRENT_LINE & 1) != prevvicurrent ? 1 : 0;
@@ -1098,8 +1190,8 @@ bool FrameBufferList::RdpUpdate::update(RdpUpdateResult & _result)
 	s32 vres = delta_y;
 	s32 h_start = x1 - (ispal ? 128 : 108);
 	s32 v_start = (y1 - (ispal ? 44 : 34)) / 2;
-	u32 x_start = _SHIFTR(*REG.VI_X_SCALE, 16, 12);
-	u32 y_start = _SHIFTR(*REG.VI_Y_SCALE, 16, 12);
+	s32 x_start = _SHIFTR(*REG.VI_X_SCALE, 16, 12);
+	s32 y_start = _SHIFTR(*REG.VI_Y_SCALE, 16, 12);
 
 	bool h_start_clamped = h_start < 0;
 	if (h_start < 0) {
@@ -1110,7 +1202,7 @@ bool FrameBufferList::RdpUpdate::update(RdpUpdateResult & _result)
 	}
 
 	if (v_start < 0) {
-		y_start += (y_add * (u32)(-v_start));
+		y_start += (y_add * (-v_start));
 		v_start = 0;
 	}
 
@@ -1122,7 +1214,7 @@ bool FrameBufferList::RdpUpdate::update(RdpUpdateResult & _result)
 	if (vres + v_start > PRESCALE_HEIGHT)
 		vres = PRESCALE_HEIGHT - v_start;
 
-	s32 vactivelines = v_sync - (ispal ? 44 : 34);
+	s32 vactivelines = static_cast<s32>(v_sync - (ispal ? 44 : 34));
 	if (vactivelines > PRESCALE_HEIGHT) {
 		LOG(LOG_VERBOSE, "VI_V_SYNC_REG too big");
 		return false;
@@ -1143,22 +1235,22 @@ bool FrameBufferList::RdpUpdate::update(RdpUpdateResult & _result)
 
 	prevwasblank = false;
 
-	_result.vi_hres = hres;
-	_result.vi_vres = vres;
+	_result.vi_hres = static_cast<u32>(hres);
+	_result.vi_vres = static_cast<u32>(vres);
 	_result.vi_ispal = ispal;
-	_result.vi_h_start = h_start;
-	_result.vi_v_start = v_start;
-	_result.vi_x_start = x_start;
-	_result.vi_y_start = y_start;
-	_result.vi_x_add = x_add;
-	_result.vi_y_add = y_add;
+	_result.vi_h_start = static_cast<u32>(h_start);
+	_result.vi_v_start = static_cast<u32>(v_start);
+	_result.vi_x_start = static_cast<u32>(x_start);
+	_result.vi_y_start = static_cast<u32>(y_start);
+	_result.vi_x_add = static_cast<u32>(x_add);
+	_result.vi_y_add = static_cast<u32>(y_add);
 	_result.vi_minhpass = h_start_clamped ? 0 : 8;
 	_result.vi_maxhpass = hres_clamped ? 0 : 7;
 	_result.vi_width = _SHIFTR(*REG.VI_WIDTH, 0, 12);
 	_result.vi_lowerfield = lowerfield;
 	_result.vi_origin = _SHIFTR(*REG.VI_ORIGIN, 0, 24);
 	_result.vi_fsaa = (*REG.VI_STATUS & 512) == 0;
-	_result.vi_divot = (*REG.VI_STATUS & 16) != 0;
+	_result.vi_divot = (*REG.VI_STATUS & VI_STATUS_DIVOT_ENABLED) != 0;
 	return true;
 
 #if 0
@@ -1216,7 +1308,10 @@ f32 FrameBufferList::OverscanBuffer::getScaleX() const
 
 f32 FrameBufferList::OverscanBuffer::getScaleY(u32 _fullHeight) const
 {
-	return (float)dwnd().getHeight() / float(_fullHeight);
+	if (m_enabled)
+		return m_scale;
+
+	return static_cast<f32>(dwnd().getHeight()) / static_cast<f32>(_fullHeight);
 }
 
 void FrameBufferList::OverscanBuffer::init()
@@ -1256,7 +1351,57 @@ void FrameBufferList::OverscanBuffer::activate()
 
 void FrameBufferList::OverscanBuffer::draw(u32 _fullHeight, bool _PAL)
 {
-	return;
+	if (!m_enabled)
+		return;
+
+	DisplayWindow & wnd = dwnd();
+	GraphicsDrawer & drawer = wnd.getDrawer();
+
+	gfxContext.bindFramebuffer(bufferTarget::DRAW_FRAMEBUFFER, ObjectHandle::defaultFramebuffer);
+#if defined(OS_WINDOWS)
+	gfxContext.clearDepthBuffer();
+#endif
+	GraphicsDrawer::BlitOrCopyRectParams blitParams;
+	const auto & overscan = _PAL ? config.frameBufferEmulation.overscanPAL : config.frameBufferEmulation.overscanNTSC;
+	const s32 left = static_cast<s32>(overscan.left * m_scale);
+	const s32 right = static_cast<s32>(overscan.right * m_scale);
+	const s32 top = static_cast<s32>(overscan.top * m_scale);
+	const s32 bottom = static_cast<s32>(overscan.bottom * m_scale);
+	blitParams.srcX0 = left;
+	blitParams.srcY0 = static_cast<s32>(_fullHeight * m_scale) - bottom;
+	blitParams.srcX1 = static_cast<s32>(m_bufferWidth) - right;
+	blitParams.srcY1 = top;
+	blitParams.srcWidth = m_pTexture->width;
+	blitParams.srcHeight = m_pTexture->height;
+	blitParams.dstX0 = m_hOffset;
+	blitParams.dstY0 = m_vOffset + static_cast<s32>(wnd.getHeightOffset());
+	blitParams.dstX1 = m_hOffset + static_cast<s32>(wnd.getWidth());
+	blitParams.dstY1 = m_vOffset + static_cast<s32>(wnd.getHeight() + wnd.getHeightOffset());
+	blitParams.dstWidth = wnd.getScreenWidth();
+	blitParams.dstHeight = wnd.getScreenHeight() + wnd.getHeightOffset();
+	blitParams.mask = blitMask::COLOR_BUFFER;
+	blitParams.tex[0] = m_pTexture;
+	const bool downscale = blitParams.srcWidth >= blitParams.dstWidth || blitParams.srcHeight >= blitParams.dstHeight;
+	blitParams.filter = downscale || config.generalEmulation.enableHybridFilter > 0 ?
+		textureParameters::FILTER_LINEAR :
+		textureParameters::FILTER_NEAREST; //upscale; hybridFilter disabled
+	if (config.frameBufferEmulation.copyDepthToMainDepthBuffer != 0) {
+		blitParams.tex[1] = m_pDepthTexture;
+		blitParams.combiner = downscale ? CombinerInfo::get().getTexrectColorAndDepthDownscaleCopyProgram() :
+			CombinerInfo::get().getTexrectColorAndDepthUpscaleCopyProgram();
+	}
+	if (blitParams.combiner == nullptr) {
+		// copyDepthToMainDepthBuffer not set or not supported
+		blitParams.combiner = downscale ? CombinerInfo::get().getTexrectDownscaleCopyProgram() :
+			CombinerInfo::get().getTexrectUpscaleCopyProgram();
+	}
+
+	blitParams.readBuffer = m_FBO;
+	blitParams.invertY = false;
+
+	gfxContext.clearColorBuffer(0.0f, 0.0f, 0.0f, 0.0f);
+//	drawer.blitOrCopyTexturedRect(blitParams);
+	drawer.copyTexturedRect(blitParams);
 }
 
 void FrameBufferList::renderBuffer()
@@ -1296,23 +1441,23 @@ void FrameBufferList::renderBuffer()
 	s32 srcPartHeight = 0;
 	s32 dstPartHeight = 0;
 
-	dstY0 = rdpRes.vi_v_start;
+	dstY0 = static_cast<s32>(rdpRes.vi_v_start);
 
 	const u32 vFullHeight = rdpRes.vi_ispal ? 288 : 240;
 	const f32 dstScaleY = m_overscan.getScaleY(vFullHeight);
 
 	const u32 addrOffset = ((rdpRes.vi_origin - pBuffer->m_startAddress) << 1 >> pBuffer->m_size);
-	srcY0 = addrOffset / pBuffer->m_width;
+	srcY0 = static_cast<s32>(addrOffset / pBuffer->m_width);
 	if ((addrOffset != 0) && (pBuffer->m_width == addrOffset * 2))
 		srcY0 = 1;
 
 	if ((rdpRes.vi_width != addrOffset * 2) && (addrOffset % rdpRes.vi_width != 0))
-		XoffsetRight = rdpRes.vi_width - addrOffset % rdpRes.vi_width;
-	if (XoffsetRight == pBuffer->m_width) {
+		XoffsetRight = static_cast<s32>(rdpRes.vi_width - addrOffset % rdpRes.vi_width);
+	if (XoffsetRight == static_cast<s32>(pBuffer->m_width)) {
 		XoffsetRight = 0;
 	} else if (XoffsetRight > static_cast<s32>(pBuffer->m_width / 2)) {
 		XoffsetRight = 0;
-		XoffsetLeft = addrOffset % rdpRes.vi_width;
+		XoffsetLeft = static_cast<s32>(addrOffset % rdpRes.vi_width);
 	}
 
 	if (!rdpRes.vi_lowerfield) {
@@ -1327,8 +1472,8 @@ void FrameBufferList::renderBuffer()
 		XoffsetRight = XoffsetLeft = 0;
 	}
 
-	srcWidth = min(rdpRes.vi_width, (rdpRes.vi_hres * rdpRes.vi_x_add) >> 10);
-	srcHeight = rdpRes.vi_width * ((rdpRes.vi_vres*rdpRes.vi_y_add + rdpRes.vi_y_start) >> 10) / pBuffer->m_width;
+	srcWidth = static_cast<s32>(min(rdpRes.vi_width, (rdpRes.vi_hres * rdpRes.vi_x_add) >> 10));
+	srcHeight = static_cast<s32>(rdpRes.vi_width * ((rdpRes.vi_vres*rdpRes.vi_y_add + rdpRes.vi_y_start) >> 10) / pBuffer->m_width);
 
 	const u32 stride = pBuffer->m_width << pBuffer->m_size >> 1;
 	FrameBuffer *pNextBuffer = findBuffer(rdpRes.vi_origin + stride * min(u32(srcHeight) - 1, pBuffer->m_height - 1) - 1);
@@ -1339,9 +1484,9 @@ void FrameBufferList::renderBuffer()
 		dstPartHeight = srcY0;
 		srcPartHeight = srcY0;
 		srcY1 = srcHeight;
-		dstY1 = dstY0 + rdpRes.vi_vres - dstPartHeight;
+		dstY1 = dstY0 + static_cast<s32>(rdpRes.vi_vres) - dstPartHeight;
 	} else {
-		dstY1 = dstY0 + rdpRes.vi_vres;
+		dstY1 = dstY0 + static_cast<s32>(rdpRes.vi_vres);
 		srcY1 = srcY0 + srcHeight;
 	}
 	PostProcessor & postProcessor = PostProcessor::get();
@@ -1351,23 +1496,23 @@ void FrameBufferList::renderBuffer()
 
 	const f32 viScaleX = _FIXED2FLOAT(_SHIFTR(*REG.VI_X_SCALE, 0, 12), 10);
 	const f32 srcScaleX = pFilteredBuffer->m_scale;
-	const f32 dstScaleX = dwnd().getWidth() / (640 * viScaleX);
-	const s32 hx0 = rdpRes.vi_h_start + rdpRes.vi_minhpass;
+	const f32 dstScaleX = m_overscan.getDrawingWidth() / (640 * viScaleX);
+	const s32 hx0 = static_cast<s32>(rdpRes.vi_h_start + rdpRes.vi_minhpass);
 	const s32 h0 = (rdpRes.vi_ispal ? 128 : 108);
 	const s32 hEnd = _SHIFTR(*REG.VI_H_START, 0, 10);
-	const s32 hx1 = max(0, h0 + 640 - hEnd + (s32)rdpRes.vi_maxhpass);
+	const s32 hx1 = max(0, h0 + 640 - hEnd + static_cast<s32>(rdpRes.vi_maxhpass));
 	//const s32 hx1 = hx0 + rdpRes.vi_hres;
-	dstX0 = (s32)((hx0 * viScaleX + f32(XoffsetRight)) * dstScaleX);
-	dstX1 = m_overscan.getDrawingWidth() - (s32)(hx1 * viScaleX * dstScaleX);
+	dstX0 = static_cast<s32>((hx0 * viScaleX + f32(XoffsetRight)) * dstScaleX);
+	dstX1 = static_cast<s32>(m_overscan.getDrawingWidth()) - static_cast<s32>(hx1 * viScaleX * dstScaleX);
 
 	const f32 srcScaleY = pFilteredBuffer->m_scale;
 	CachedTexture * pBufferTexture = pFilteredBuffer->m_pTexture;
 	const s32 cutleft = static_cast<s32>(rdpRes.vi_minhpass * viScaleX * srcScaleX);
 	const s32 cutright = static_cast<s32>(rdpRes.vi_maxhpass * viScaleX * srcScaleX);
-	s32 srcCoord[4] = { (s32)((XoffsetLeft) * srcScaleX) + cutleft,
-						(s32)(srcY0*srcScaleY),
-						(s32)((srcWidth + XoffsetLeft - XoffsetRight) * srcScaleX) - cutright,
-						min((s32)(srcY1*srcScaleY), (s32)pBufferTexture->height) };
+	s32 srcCoord[4] = { static_cast<s32>((XoffsetLeft) * srcScaleX) + cutleft,
+						static_cast<s32>(srcY0*srcScaleY),
+						static_cast<s32>((srcWidth + XoffsetLeft - XoffsetRight) * srcScaleX) - cutright,
+						min(static_cast<s32>(srcY1*srcScaleY), static_cast<s32>(pBufferTexture->height)) };
 	if (srcCoord[2] > pBufferTexture->width || srcCoord[3] > pBufferTexture->height) {
 		removeBuffer(pBuffer->m_startAddress);
 		return;
@@ -1376,11 +1521,10 @@ void FrameBufferList::renderBuffer()
 	const s32 hOffset = m_overscan.getHOffset();
 	const s32 vOffset = m_overscan.getVOffset();
 	s32 dstCoord[4] = { dstX0 + hOffset,
-						vOffset + (s32)(dstY0*dstScaleY),
+						vOffset + static_cast<s32>(dstY0*dstScaleY),
 						hOffset + dstX1,
-						vOffset + (s32)(dstY1*dstScaleY) };
+						vOffset + static_cast<s32>(dstY1*dstScaleY) };
 
-	const TextureParam filter = textureParameters::FILTER_NEAREST;
 	ObjectHandle readBuffer;
 
 	if (pFilteredBuffer->m_pTexture->frameBufferTexture == CachedTexture::fbMultiSample) {
@@ -1410,16 +1554,21 @@ void FrameBufferList::renderBuffer()
 	blitParams.dstY1 = dstCoord[3];
 	blitParams.dstWidth = m_overscan.getBufferWidth();
 	blitParams.dstHeight = m_overscan.getBufferHeight();
-	blitParams.filter = filter;
 	blitParams.mask = blitMask::COLOR_BUFFER;
 	blitParams.tex[0] = pBufferTexture;
+	const bool downscale = blitParams.srcWidth >= blitParams.dstWidth || blitParams.srcHeight >= blitParams.dstHeight;
+	blitParams.filter = downscale || config.generalEmulation.enableHybridFilter > 0 ?
+		textureParameters::FILTER_LINEAR :
+		textureParameters::FILTER_NEAREST; //upscale; hybridFilter disabled
 	if (config.frameBufferEmulation.copyDepthToMainDepthBuffer != 0) {
 		blitParams.tex[1] = pBuffer->m_pDepthTexture;
-		blitParams.combiner = CombinerInfo::get().getTexrectColorAndDepthCopyProgram();
+		blitParams.combiner = downscale ? CombinerInfo::get().getTexrectColorAndDepthDownscaleCopyProgram() :
+			CombinerInfo::get().getTexrectColorAndDepthUpscaleCopyProgram();
 	}
 	if (blitParams.combiner == nullptr) {
 		// copyDepthToMainDepthBuffer not set or not supported
-		blitParams.combiner = CombinerInfo::get().getTexrectCopyProgram();
+		blitParams.combiner = downscale ? CombinerInfo::get().getTexrectDownscaleCopyProgram() :
+			CombinerInfo::get().getTexrectUpscaleCopyProgram();
 	}
 	blitParams.readBuffer = readBuffer;
 	blitParams.invertY = 1;
@@ -1444,16 +1593,15 @@ void FrameBufferList::renderBuffer()
 		}
 
 		blitParams.srcY0 = 0;
-		blitParams.srcY1 = min((s32)(srcY1*srcScaleY), (s32)pFilteredBuffer->m_pTexture->height);
+		blitParams.srcY1 = min(static_cast<s32>(srcY1*srcScaleY), static_cast<s32>(pFilteredBuffer->m_pTexture->height));
 		blitParams.srcWidth = pBufferTexture->width;
 		blitParams.srcHeight = pBufferTexture->height;
-		blitParams.dstY0 = vOffset + (s32)(dstY0*dstScaleY);
-		blitParams.dstY1 = vOffset + (s32)(dstY1*dstScaleY);
+		blitParams.dstY0 = vOffset + static_cast<s32>(dstY0*dstScaleY);
+		blitParams.dstY1 = vOffset + static_cast<s32>(dstY1*dstScaleY);
 		blitParams.dstWidth = m_overscan.getBufferWidth();
 		blitParams.dstHeight = m_overscan.getBufferHeight();
 		blitParams.tex[0] = pBufferTexture;
 		blitParams.tex[1] = pNextBuffer->m_pDepthTexture;
-		blitParams.filter = filter;
 		blitParams.mask = blitMask::COLOR_BUFFER;
 		blitParams.readBuffer = readBuffer;
 
@@ -1472,9 +1620,9 @@ void FrameBufferList::renderBuffer()
 	}
 
 	const s32 X = hOffset;
-	const s32 Y = wnd.getHeightOffset();
-	const s32 W = wnd.getWidth();
-	const s32 H = wnd.getHeight();
+	const s32 Y = static_cast<s32>(wnd.getHeightOffset());
+	const s32 W = static_cast<s32>(wnd.getWidth());
+	const s32 H = static_cast<s32>(wnd.getHeight());
 
 	gfxContext.setScissor(X, Y, W, H);
 	gDP.changed |= CHANGED_SCISSOR;
@@ -1489,20 +1637,20 @@ void FrameBufferList::fillRDRAM(s32 ulx, s32 uly, s32 lrx, s32 lry)
 		// Do not write to RDRAM color buffer if copyFromRDRAM enabled.
 		return;
 
-	ulx = (s32)min(max((float)ulx, gDP.scissor.ulx), gDP.scissor.lrx);
-	lrx = (s32)min(max((float)lrx, gDP.scissor.ulx), gDP.scissor.lrx);
-	uly = (s32)min(max((float)uly, gDP.scissor.uly), gDP.scissor.lry);
-	lry = (s32)min(max((float)lry, gDP.scissor.uly), gDP.scissor.lry);
+	ulx = static_cast<s32>(min(max(static_cast<f32>(ulx), gDP.scissor.ulx), gDP.scissor.lrx));
+	lrx = static_cast<s32>(min(max(static_cast<f32>(lrx), gDP.scissor.ulx), gDP.scissor.lrx));
+	uly = static_cast<s32>(min(max(static_cast<f32>(uly), gDP.scissor.uly), gDP.scissor.lry));
+	lry = static_cast<s32>(min(max(static_cast<f32>(lry), gDP.scissor.uly), gDP.scissor.lry));
 
 	const u32 stride = gDP.colorImage.width << gDP.colorImage.size >> 1;
-	const u32 lowerBound = gDP.colorImage.address + lry*stride;
+	const u32 lowerBound = gDP.colorImage.address + static_cast<u32>(lry)*stride;
 	if (lowerBound > RDRAMSize)
 		lry -= (lowerBound - RDRAMSize) / stride;
 	u32 ci_width_in_dwords = gDP.colorImage.width >> (3 - gDP.colorImage.size);
 	ulx >>= (3 - gDP.colorImage.size);
 	lrx >>= (3 - gDP.colorImage.size);
-	u32 * dst = (u32*)(RDRAM + gDP.colorImage.address);
-	dst += uly * ci_width_in_dwords;
+	u32 * dst = reinterpret_cast<u32*>(RDRAM + gDP.colorImage.address);
+	dst += static_cast<u32>(uly) * ci_width_in_dwords;
 	if (!isMemoryWritable(dst, lowerBound - gDP.colorImage.address))
 		return;
 	for (s32 y = uly; y < lry; ++y) {
@@ -1536,7 +1684,7 @@ void FrameBuffer_ActivateBufferTextureBG(u32 t, u32 _frameBufferAddress)
 	if (pBuffer == nullptr)
 		return;
 
-	CachedTexture *pTexture = pBuffer->getTextureBG(t);
+	CachedTexture *pTexture = pBuffer->getTextureBG();
 	if (pTexture == nullptr)
 		return;
 
@@ -1598,7 +1746,7 @@ u32 cutHeight(u32 _address, u32 _height, u32 _stride)
 void calcCoordsScales(const FrameBuffer * _pBuffer, f32 & _scaleX, f32 & _scaleY)
 {
 	const u32 bufferWidth = _pBuffer != nullptr ? _pBuffer->m_width : VI.width;
-	const u32 bufferHeight = VI_GetMaxBufferHeight(bufferWidth);
+	const u32 bufferHeight = VI_GetMaxBufferHeight(static_cast<u16>(bufferWidth));
 	_scaleX = 1.0f / f32(bufferWidth);
 	_scaleY = 1.0f / f32(bufferHeight);
 }

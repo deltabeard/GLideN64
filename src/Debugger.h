@@ -1,4 +1,5 @@
 #ifndef DEBUGGER_H
+#define DEBUGGER_H
 
 #include <set>
 #include <list>
@@ -104,6 +105,7 @@ private:
 		gDPInfo::FillColor fill_color;
 		gDPInfo::PrimColor prim_color;
 		f32 primDepthZ, primDepthDeltaZ;
+		f32 fogMultiplier, fogOffset;
 		s32 K4, K5;
 
 		f32 getScreenX(const Vertex & _v) const;

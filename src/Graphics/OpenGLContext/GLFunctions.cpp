@@ -1,13 +1,28 @@
 #ifdef __LIBRETRO__
 #include <glsm/glsmsym.h>
-#define NO_GL_WRAP 1
+static retro_proc_address_t glsm_get_proc_address(const char *name)
+{
+	glsm_ctx_proc_address_t proc = {};
+	if (!glsm_ctl(GLSM_CTL_PROC_ADDRESS_GET, &proc) || proc.addr == nullptr)
+		return nullptr;
+	return proc.addr(name);
+}
 #endif
 
+#define NO_GL_WRAP 1
 #include "GLFunctions.h"
 
-#define ASSIGN_PROC_ADR(proc_type, proc_name) ptr##proc_name = gl##proc_name
-#if defined(GL_USE_DLSYM)
+#ifdef __LIBRETRO__
+#define ASSIGN_PROC_ADR(proc_type, proc_name) ptr##proc_name = (proc_type) glsm_get_proc_address("gl"#proc_name)
+#define ASSIGN_GL_PROC_ADR(proc_type, proc_name) ptr##proc_name = (proc_type) glsm_get_proc_address("gl"#proc_name)
+#else
+#define ASSIGN_PROC_ADR(proc_type, proc_name) ptr##proc_name = (proc_type) dlsym(RTLD_DEFAULT, "gl"#proc_name)
+#define ASSIGN_GL_PROC_ADR(proc_type, proc_name) ptr##proc_name = (proc_type) dlsym(RTLD_DEFAULT, "gl"#proc_name)
+#endif
+
+#if defined(GL_USE_DLSYM) || !defined(__LIBRETRO__)
 // Use dlsym() to load GL symbols from the default shared object search order
+#include <dlfcn.h>
 #define GL_GET_PROC_ADR(proc_type, proc_name) ptr##proc_name = (proc_type) dlsym(RTLD_DEFAULT, "gl"#proc_name)
 #else
 // Use libretro API to load GL/EGL symbols
@@ -78,6 +93,7 @@ static void* IOSGLGetProcAddress (const char *name)
 
 //GL Functions
 PFNGLBLENDFUNCPROC ptrBlendFunc;
+PFNGLBLENDFUNCSEPARATEPROC ptrBlendFuncSeparate;
 PFNGLPIXELSTOREIPROC ptrPixelStorei;
 PFNGLCLEARCOLORPROC ptrClearColor;
 PFNGLCULLFACEPROC ptrCullFace;
@@ -108,6 +124,7 @@ PFNGLACTIVETEXTUREPROC ptrActiveTexture;
 PFNGLBLENDCOLORPROC ptrBlendColor;
 PFNGLREADBUFFERPROC ptrReadBuffer;
 PFNGLFINISHPROC ptrFinish;
+PFNGLFLUSHPROC ptrFlush;
 #if defined(OS_ANDROID)
 PFNEGLGETNATIVECLIENTBUFFERANDROIDPROC ptrGetNativeClientBufferANDROID;
 #endif
@@ -237,8 +254,8 @@ extern "C" void initGLFunctions()
 	ASSIGN_PROC_ADR(PFNGLCULLFACEPROC, CullFace);
 	ASSIGN_PROC_ADR(PFNGLDEPTHFUNCPROC, DepthFunc);
 	ASSIGN_PROC_ADR(PFNGLDEPTHMASKPROC, DepthMask);
-	GL_GET_PROC_ADR(PFNGLDISABLEPROC, Disable);
-	GL_GET_PROC_ADR(PFNGLENABLEPROC, Enable);
+	ASSIGN_PROC_ADR(PFNGLDISABLEPROC, Disable);
+	ASSIGN_PROC_ADR(PFNGLENABLEPROC, Enable);
 	ASSIGN_PROC_ADR(PFNGLPOLYGONOFFSETPROC, PolygonOffset);
 	ASSIGN_PROC_ADR(PFNGLSCISSORPROC, Scissor);
 	ASSIGN_PROC_ADR(PFNGLVIEWPORTPROC, Viewport);
@@ -262,6 +279,7 @@ extern "C" void initGLFunctions()
 	ASSIGN_PROC_ADR(PFNGLBLENDCOLORPROC, BlendColor);
 	ASSIGN_PROC_ADR(PFNGLREADBUFFERPROC, ReadBuffer);
 	GL_GET_PROC_ADR(PFNGLFINISHPROC, Finish);
+	GL_GET_PROC_ADR(PFNGLFLUSHPROC, Flush);
 #if defined(OS_ANDROID)
 	GL_GET_PROC_ADR_EGL(PFNEGLGETNATIVECLIENTBUFFERANDROIDPROC, GetNativeClientBufferANDROID);
 #endif
@@ -281,9 +299,9 @@ extern "C" void initGLFunctions()
 	ASSIGN_PROC_ADR(PFNGLVIEWPORTPROC, Viewport);
 	ASSIGN_PROC_ADR(PFNGLBINDTEXTUREPROC, BindTexture);
 	GL_GET_PROC_ADR(PFNGLTEXIMAGE2DPROC, TexImage2D);
-	ASSIGN_PROC_ADR(PFNGLTEXPARAMETERIPROC, TexParameteri);
-	ASSIGN_PROC_ADR(PFNGLGETINTEGERVPROC, GetIntegerv);
-	ASSIGN_PROC_ADR(PFNGLGETSTRINGPROC, GetString);
+	ASSIGN_GL_PROC_ADR(PFNGLTEXPARAMETERIPROC, TexParameteri);
+	ASSIGN_GL_PROC_ADR(PFNGLGETINTEGERVPROC, GetIntegerv);
+	ASSIGN_GL_PROC_ADR(PFNGLGETSTRINGPROC, GetString);
 	ASSIGN_PROC_ADR(PFNGLREADPIXELSPROC, ReadPixels);
 	ASSIGN_PROC_ADR(PFNGLTEXSUBIMAGE2DPROC, TexSubImage2D);
 	ASSIGN_PROC_ADR(PFNGLDRAWARRAYSPROC, DrawArrays);
@@ -291,12 +309,12 @@ extern "C" void initGLFunctions()
 	ASSIGN_PROC_ADR(PFNGLDRAWELEMENTSPROC, DrawElements);
 	ASSIGN_PROC_ADR(PFNGLLINEWIDTHPROC, LineWidth);
 	ASSIGN_PROC_ADR(PFNGLCLEARPROC, Clear);
-	ASSIGN_PROC_ADR(PFNGLGETFLOATVPROC, GetFloatv);
+	ASSIGN_GL_PROC_ADR(PFNGLGETFLOATVPROC, GetFloatv);
 	ASSIGN_PROC_ADR(PFNGLDELETETEXTURESPROC, DeleteTextures);
 	ASSIGN_PROC_ADR(PFNGLGENTEXTURESPROC, GenTextures);
 	GL_GET_PROC_ADR(PFNGLTEXPARAMETERFPROC, TexParameterf);
 	ASSIGN_PROC_ADR(PFNGLREADBUFFERPROC, ReadBuffer);
-	ASSIGN_PROC_ADR(PFNGLFINISHPROC, Finish);
+	ASSIGN_GL_PROC_ADR(PFNGLFINISHPROC, Finish);
 #endif
 
 	ASSIGN_PROC_ADR(PFNGLCREATESHADERPROC, CreateShader);
@@ -403,4 +421,6 @@ extern "C" void initGLFunctions()
 
 	GL_GET_PROC_ADR(PFNGLEGLIMAGETARGETTEXTURE2DOESPROC, EGLImageTargetTexture2DOES);
 	GL_GET_PROC_ADR(PFNGLEGLIMAGETARGETRENDERBUFFERSTORAGEOESPROC, EGLImageTargetRenderbufferStorageOES);
+
+	ASSIGN_PROC_ADR(PFNGLBLENDFUNCSEPARATEPROC, BlendFuncSeparate);
 }

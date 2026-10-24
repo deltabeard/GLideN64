@@ -1,4 +1,5 @@
 #include <assert.h>
+#include <cstring>
 #include "FrameBufferInfoAPI.h"
 #include "FrameBufferInfo.h"
 #include "Config.h"

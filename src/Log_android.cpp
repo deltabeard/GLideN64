@@ -4,8 +4,7 @@
 #include <vector>
 #include <sstream>
 
-void LogDebug(const char* f, int lin, int lvl, const char* fmt, ...)
-{
+void LogDebug(const char* _fileName, int _line, u16 _type, const char* _format, ...) {
 	static android_LogPriority androidLogTranslate[] = {
 			ANDROID_LOG_VERBOSE,
 			ANDROID_LOG_INFO,
@@ -13,11 +12,11 @@ void LogDebug(const char* f, int lin, int lvl, const char* fmt, ...)
 			ANDROID_LOG_ERROR
 	};
 
-	if (lvl > LOG_LEVEL)
+	if (_type > LOG_LEVEL)
 		return;
 
 	va_list va;
-	va_start(va, fmt);
-	__android_log_vprint(androidLogTranslate[lvl], "GLideN64", fmt, va);
+	va_start(va, _format);
+	__android_log_vprint(androidLogTranslate[_type], "GLideN64", _format, va);
 	va_end(va);
 }

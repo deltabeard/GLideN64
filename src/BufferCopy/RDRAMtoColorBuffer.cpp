@@ -12,6 +12,7 @@
 #include <Graphics/Parameters.h>
 #include <DisplayWindow.h>
 #include <algorithm>
+#include <cstring>
 
 using namespace graphics;
 
@@ -45,6 +46,9 @@ void RDRAMtoColorBuffer::init()
 	m_pTexture->height = 580;
 	m_pTexture->textureBytes = m_pTexture->width * m_pTexture->height * fbTexFormats.colorFormatBytes;
 
+	m_pTexture->hdRatioS = 1.0f;
+	m_pTexture->hdRatioT = 1.0f;
+
 	Context::InitTextureParams initParams;
 	initParams.handle = m_pTexture->name;
 	initParams.width = m_pTexture->width;
@@ -72,6 +76,7 @@ void RDRAMtoColorBuffer::destroy()
 		m_pTexture = nullptr;
 	}
 	free(m_pbuf);
+	m_pbuf = nullptr;
 }
 
 void RDRAMtoColorBuffer::addAddress(u32 _address, u32 _size)
@@ -93,6 +98,8 @@ void RDRAMtoColorBuffer::addAddress(u32 _address, u32 _size)
 template <typename TSrc>
 bool _copyBufferFromRdram(u32 _address, u32* _dst, u32(*converter)(TSrc _c, bool _bCFB), u32 _xor, u32 _x0, u32 _y0, u32 _width, u32 _height, bool _fullAlpha)
 {
+	if ((_address & 1) != 0)
+		return false;
 	TSrc * src = reinterpret_cast<TSrc*>(RDRAM + _address);
 	const u32 bound = (RDRAMSize + 1 - _address) >> (sizeof(TSrc) / 2);
 	TSrc col;
@@ -300,9 +307,6 @@ void RDRAMtoColorBuffer::copyFromRDRAM(u32 _address, bool _bCFB)
 	}
 
 	if (m_pCurBuffer == nullptr || m_pCurBuffer->m_size < G_IM_SIZ_16b)
-		return;
-
-	if (m_pCurBuffer->m_startAddress == _address && gDP.colorImage.changed != 0)
 		return;
 
 	const u32 height = cutHeight(m_pCurBuffer->m_startAddress,

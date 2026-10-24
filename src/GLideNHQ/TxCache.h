@@ -31,27 +31,6 @@
 #include "TxInternal.h"
 #include "TxUtil.h"
 
-struct  Checksum
-{
-	union
-	{
-		uint64 _checksum; /* checksum hi:palette low:texture */
-		struct
-		{
-			uint32 _low;
-			uint32 _hi;
-		};
-	};
-
-	Checksum(uint64 checksum) : _checksum(checksum) {}
-	operator bool() {
-		return _checksum != 0;
-	}
-	operator uint64() {
-		return _checksum;
-	}
-};
-
 class TxCacheImpl;
 
 class TxCache
@@ -62,11 +41,12 @@ private:
 protected:
 	tx_wstring _ident;
 	tx_wstring _cachePath;
+	dispInfoFuncExt _callback;
 
 	bool save();
 	bool load(bool force);
-	bool del(Checksum checksum); /* checksum hi:palette low:texture */
-	bool isCached(Checksum checksum); /* checksum hi:palette low:texture */
+	bool del(Checksum checksum);
+	bool isCached(Checksum checksum, N64FormatSize n64FmtSz) const;
 	void clear();
 	uint64 size() const; // number of elements
 	uint64 totalSize() const; // size of elements in bytes
@@ -79,9 +59,9 @@ protected:
 
 public:
 	virtual ~TxCache();
-	TxCache(uint32 options, uint64 cacheLimit, const wchar_t *cachePath, const wchar_t *ident);
+	TxCache(uint32 options, uint64 cacheLimit, const wchar_t *cachePath, const wchar_t *ident, dispInfoFuncExt callback);
 	bool add(Checksum checksum, GHQTexInfo *info, int dataSize = 0);
-	bool get(Checksum checksum, GHQTexInfo *info);
+	bool get(Checksum checksum, N64FormatSize n64FmtSz, GHQTexInfo *info);
 	bool empty() const;
 };
 

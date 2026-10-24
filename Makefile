@@ -1,6 +1,7 @@
-SOURCES_C := ./src/Log.c
+.DEFAULT_GOAL := all
 
 SOURCES_CXX += ./src/3DMath.cpp ./src/CRC32.cpp \
+	       ./src/BufferCopy/BlueNoiseTexture.cpp                                   \
 	       ./src/BufferCopy/ColorBufferToRDRAM.cpp                                    \
 	       ./src/BufferCopy/DepthBufferToRDRAM.cpp                                    \
 	       ./src/BufferCopy/RDRAMtoColorBuffer.cpp                                    \
@@ -13,6 +14,7 @@ SOURCES_CXX += ./src/3DMath.cpp ./src/CRC32.cpp \
 	       ./src/DepthBufferRender/ClipPolygon.cpp                                    \
 	       ./src/DepthBufferRender/DepthBufferRender.cpp                              \
 	       ./src/DisplayWindow.cpp                                                    \
+	       ./src/DisplayLoadProgress.cpp                                              \
 	       ./src/FrameBuffer.cpp                                                      \
 	       ./src/FrameBufferInfo.cpp                                                  \
 	       ./src/GBI.cpp                                                              \
@@ -24,7 +26,6 @@ SOURCES_CXX += ./src/3DMath.cpp ./src/CRC32.cpp \
 	       ./src/GraphicsDrawer.cpp                                                   \
 	       ./src/MupenPlusPluginAPI.cpp                                               \
 	       ./src/N64.cpp                                                              \
-	       ./src/NoiseTexture.cpp                                                     \
 	       ./src/PaletteTexture.cpp                                                   \
 	       ./src/PostProcessor.cpp                                                    \
 	       ./src/RDP.cpp                                                              \
@@ -47,9 +48,11 @@ SOURCES_CXX += ./src/3DMath.cpp ./src/CRC32.cpp \
 	       ./src/uCodes/F3DBETA.cpp                                                   \
 	       ./src/uCodes/F3DDKR.cpp                                                    \
 	       ./src/uCodes/F3DEX.cpp                                                     \
+	       ./src/uCodes/F3DEX095.cpp                                                  \
 	       ./src/uCodes/F3DEX2.cpp                                                    \
 	       ./src/uCodes/F3DEX2ACCLAIM.cpp                                             \
 	       ./src/uCodes/F3DEX2CBFD.cpp                                                \
+	       ./src/uCodes/F3DEX3.cpp                                                    \
 	       ./src/uCodes/F3DFLX2.cpp                                                   \
 	       ./src/uCodes/F3DGOLDEN.cpp                                                 \
 	       ./src/uCodes/F3DPD.cpp                                                     \
@@ -108,10 +111,18 @@ else
 	OBJOUT := -o
 endif
 
-override CFLAGS += -Isrc -Isrc/inc -Ilibretro-common/include -D__LIBRETRO__ -DMUPENPLUSAPI
+override CFLAGS += -Isrc -Isrc/inc -Isrc/osal -Ilibretro-common/include -D__LIBRETRO__ -DMUPENPLUSAPI
 override CXXFLAGS += $(CFLAGS)
 
-OBJ := $(SOURCES_C:.c=.$(OBJEXT)) $(SOURCES_CXX:.cpp=.$(OBJEXT))
+OBJ := ./src/Log.$(OBJEXT) $(SOURCES_CXX:.cpp=.$(OBJEXT))
+
+ifeq ($(CC), cl)
+./src/Log.obj: ./src/Log.c
+	$(CXX) /TP -c $(CXXFLAGS) $(CPPFLAGS) /Fo$@ $<
+else
+./src/Log.o: ./src/Log.c
+	$(CXX) -x c++ -c $(CXXFLAGS) $(CPPFLAGS) -o $@ $<
+endif
 
 all: $(OBJ)
 
